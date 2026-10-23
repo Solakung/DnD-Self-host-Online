@@ -186,6 +186,7 @@ async function enterRoom(code, create) {
   selected = null;
   maps = {};
   selectedMap = null;
+  fog = ''; fogStop();
   Object.keys(imgs).forEach(k => delete imgs[k]);
   $('#logList').innerHTML = '';
 
@@ -196,6 +197,11 @@ async function enterRoom(code, create) {
     bgUrl = typeof m.bg === 'string' ? m.bg : '';
     loadBg();
     updateRoomUI();
+  }));
+
+  u.push(D.onValue(roomRef('fog'), s => {
+    const v = s.val();
+    if (!fogMode) { fog = typeof v === 'string' && v.length === GRID * GRID ? v : ''; draw(); }
   }));
 
   const tref = roomRef('tokens');
@@ -261,6 +267,7 @@ function leaveRoom(silent) {
     selectedMap = null;
     rebuildLocalImgs();
     bgUrl = store.get('bg', '');
+    fog = store.get('fog', ''); fogStop();
     loadBg();
     $('#logList').innerHTML = '';
     renderTokenList(); renderMapList(); renderParty(); updateSelBar(); updateRoomUI(); draw();
@@ -598,6 +605,9 @@ let selectedMap = null;
 const imgs = {}; // id -> HTMLImageElement ที่โหลดเสร็จแล้ว
 let bgUrl = store.get('bg', '');
 let bgImg = null;
+let fog = store.get('fog', ''); // สตริงยาว 1600 ตัว '1' = ช่องที่ถูกหมอกปิด (ว่าง = ไม่ใช้หมอก)
+let fogMode = null, fogBrush = 1, fogLast = null, fogDirty = false;
+const fogHidden = (x, y) => fog.length === GRID * GRID && fog[y * GRID + x] === '1';
 const view = { s: 1, x: 0, y: 0 };
 let W = 0;
 let H = 0;
@@ -856,7 +866,8 @@ function zoomAt(px, py, f) {
 const toWorld = (px, py) => ({ x: (px - view.x) / view.s, y: (py - view.y) / view.s });
 
 function sortedTokens(smallFirst) {
-  return Object.values(tokens).sort((a, b) => (smallFirst ? a.size - b.size : b.size - a.size));
+  const vis = iAmDM() ? Object.values(tokens) : Object.values(tokens).filter(t => !fogHidden(t.x, t.y));
+  return vis.sort((a, b) => (smallFirst ? a.size - b.size : b.size - a.size));
 }
 function hitToken(px, py) {
   const w = toWorld(px, py);
@@ -960,6 +971,15 @@ function draw() {
     }
   });
 
+  // หมอก (DM เห็นเป็นโปร่ง ผู้เล่นทึบ)
+  if (fog.length === GRID * GRID) {
+    ctx.fillStyle = iAmDM() ? 'rgba(6,8,14,.55)' : '#06080e';
+    const e = 0.6;
+    for (let j = y0; j < y1; j++) for (let i = x0; i < x1; i++) {
+      if (fog[j * GRID + i] === '1') ctx.fillRect(i * CELL - e, j * CELL - e, CELL + 2 * e, CELL + 2 * e);
+    }
+  }
+
   // ระยะที่ลากอยู่
   if (drag && drag.kind === 'token' && drag.moved && tokens[drag.id]) {
     const t = tokens[drag.id];
@@ -1003,6 +1023,50 @@ function loadBg() {
   img.src = bgUrl;
 }
 
+/* --- หมอก (เฉพาะ DM) --- */
+function fogCell(ox, oy) {
+  const w = toWorld(ox, oy);
+  return { x: Math.floor(w.x / CELL), y: Math.floor(w.y / CELL) };
+}
+function fogPaint(c) {
+  if (c.x < 0 || c.y < 0 || c.x >= GRID || c.y >= GRID) return;
+  if (fog.length !== GRID * GRID) fog = '0'.repeat(GRID * GRID);
+  const a = fog.split('');
+  const v = fogMode === 'hide' ? '1' : '0';
+  const r = (fogBrush - 1) / 2;
+  for (let dy = -r; dy <= r; dy++) for (let dx = -r; dx <= r; dx++) {
+    const x = c.x + dx, y = c.y + dy;
+    if (x >= 0 && y >= 0 && x < GRID && y < GRID) a[y * GRID + x] = v;
+  }
+  fog = a.join('');
+  fogDirty = true;
+}
+function fogStroke(to) {
+  const from = fogLast || to;
+  const n = Math.max(Math.abs(to.x - from.x), Math.abs(to.y - from.y), 1);
+  for (let i = 1; i <= n; i++) fogPaint({ x: Math.round(from.x + (to.x - from.x) * i / n), y: Math.round(from.y + (to.y - from.y) * i / n) });
+  fogLast = to;
+  draw();
+}
+async function fogSave() {
+  fogDirty = false;
+  if (online()) {
+    try {
+      if (fog.length === GRID * GRID) await fb.D.set(roomRef('fog'), fog); else await fb.D.remove(roomRef('fog'));
+    } catch { toast('บันทึกหมอกไม่สำเร็จ (เฉพาะ DM)'); }
+  } else store.set('fog', fog);
+}
+function fogStop() {
+  fogMode = null; fogLast = null;
+  $('#fogBar').hidden = true;
+  $('#fogBtn').classList.remove('on');
+}
+function fogUI() {
+  $('#fogReveal').classList.toggle('on', fogMode === 'reveal');
+  $('#fogHide').classList.toggle('on', fogMode === 'hide');
+  $('#fogBrush').textContent = 'พู่กัน ' + fogBrush;
+}
+
 /* --- ไม้บรรทัด (เฉพาะในเครื่องตัวเอง) --- */
 let rulerOn = false, ruler = null;
 function rulerPt(ox, oy) {
@@ -1022,6 +1086,10 @@ cv.addEventListener('pointerdown', e => {
   }
   if (ptrs.size > 2) return;
 
+  if (fogMode) {
+    fogLast = null; fogStroke(fogCell(e.offsetX, e.offsetY));
+    return;
+  }
   if (rulerOn) {
     const q = rulerPt(e.offsetX, e.offsetY);
     ruler = { a: q, b: q };
@@ -1075,6 +1143,7 @@ cv.addEventListener('pointermove', e => {
     draw();
     return;
   }
+  if (fogMode) { if (ptrs.size === 1) fogStroke(fogCell(e.offsetX, e.offsetY)); return; }
   if (rulerOn && ruler) { ruler.b = rulerPt(e.offsetX, e.offsetY); draw(); return; }
   if (drag) {
     const w = toWorld(e.offsetX, e.offsetY);
@@ -1112,6 +1181,7 @@ function endPointer(e) {
   ptrs.delete(e.pointerId);
   if (ptrs.size < 2) pinch = null;
   if (ptrs.size === 0) {
+    if (fogMode) { fogLast = null; if (fogDirty) fogSave(); return; }
     if (drag) {
       const d = drag;
       drag = null;
@@ -1305,6 +1375,8 @@ function updateRoomUI() {
   b.classList.toggle('on', online());
   b.textContent = online() ? `ห้อง ${room.code} · ${room.isDM ? 'DM' : 'ผู้เล่น'}` : 'ออฟไลน์';
   $('#dmBox').hidden = !iAmDM();
+  $('#fogBtn').hidden = !iAmDM();
+  if (!iAmDM()) fogStop();
   $('#r-leave').hidden = !online();
   $('#r-copy').hidden = !online();
   $('#r-create').disabled = !configured;
@@ -1402,7 +1474,20 @@ function bindBoardUI() {
   $('#zoomIn').onclick = () => { zoomAt(W / 2, H / 2, 1.25); draw(); };
   $('#zoomOut').onclick = () => { zoomAt(W / 2, H / 2, 1 / 1.25); draw(); };
   $('#zoomFit').onclick = () => { fitView(); draw(); };
+  $('#fogBtn').onclick = () => {
+    if (fogMode) { fogStop(); return; }
+    rulerOn = false; ruler = null; $('#rulerBtn').classList.remove('on');
+    fogMode = 'reveal'; $('#fogBar').hidden = false; $('#fogBtn').classList.add('on'); fogUI();
+    toast('ลากบนกระดานเพื่อเปิดช่อง');
+  };
+  $('#fogReveal').onclick = () => { fogMode = 'reveal'; fogUI(); };
+  $('#fogHide').onclick = () => { fogMode = 'hide'; fogUI(); };
+  $('#fogBrush').onclick = () => { fogBrush = fogBrush === 1 ? 3 : fogBrush === 3 ? 5 : 1; fogUI(); };
+  $('#fogAll').onclick = () => { fog = '1'.repeat(GRID * GRID); fogSave(); draw(); };
+  $('#fogOff').onclick = () => { fog = ''; fogSave(); draw(); };
+  $('#fogDone').onclick = () => { fogStop(); };
   $('#rulerBtn').onclick = () => {
+    if (fogMode) fogStop();
     rulerOn = !rulerOn; ruler = null;
     $('#rulerBtn').classList.toggle('on', rulerOn);
     $('#rulerBtn').setAttribute('aria-pressed', rulerOn);

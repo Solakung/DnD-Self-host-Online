@@ -111,6 +111,7 @@
       <input type="file" id="imgFile" accept="image/*" hidden>
       <button id="zoomOut" aria-label="ซูมออก">−</button>
       <button id="zoomIn" aria-label="ซูมเข้า">+</button>
+      <button id="fogBtn" hidden>🌫 หมอก</button>
       <button id="rulerBtn" aria-pressed="false">📏 วัดระยะ</button>
       <button id="zoomFit">พอดีจอ</button>
     </div>
@@ -124,9 +125,17 @@
         <button id="selEdit">แก้ไข</button>
         <button id="selDel" class="danger">ลบ</button>
       </span>
+      <span id="fogBar" class="selbar" hidden>
+        <button id="fogReveal" class="on">เปิดช่อง</button>
+        <button id="fogHide">ซ่อนช่อง</button>
+        <button id="fogBrush">พู่กัน 1</button>
+        <button id="fogAll">ซ่อนทั้งหมด</button>
+        <button id="fogOff">เลิกใช้หมอก</button>
+        <button id="fogDone" class="primary">เสร็จ</button>
+      </span>
       <div class="zoom-lbl" id="zoomLbl"></div>
     </div>
-    <p class="hint">ลากโทเคนเพื่อย้าย (ขึ้นระยะทางเป็น ft) · ลากพื้นที่ว่างเพื่อเลื่อน · ล้อเมาส์/จีบสองนิ้วเพื่อซูม · ดับเบิลคลิกโทเคนเพื่อแก้ไข · "สำเนา" ทำโทเคนซ้ำพร้อมเลขต่อท้าย (Goblin 2, 3…) · "📏 วัดระยะ" แล้วลากบนกระดาน<br>รูป: กด "🖼 รูป" เลือกจากเครื่อง · แตะรูปเพื่อเลือก แล้วลากเพื่อย้าย · ลากวงกลมมุมขวาล่างเพื่อปรับขนาด</p>
+    <p class="hint">ลากโทเคนเพื่อย้าย (ขึ้นระยะทางเป็น ft) · ลากพื้นที่ว่างเพื่อเลื่อน · ล้อเมาส์/จีบสองนิ้วเพื่อซูม · ดับเบิลคลิกโทเคนเพื่อแก้ไข · "สำเนา" ทำโทเคนซ้ำพร้อมเลขต่อท้าย (Goblin 2, 3…) · "📏 วัดระยะ" แล้วลากบนกระดาน · DM: "🌫 หมอก" แล้วลากถูเพื่อเปิด/ซ่อนช่อง<br>รูป: กด "🖼 รูป" เลือกจากเครื่อง · แตะรูปเพื่อเลือก แล้วลากเพื่อย้าย · ลากวงกลมมุมขวาล่างเพื่อปรับขนาด</p>
 
     <details class="card" id="tokBox" open>
       <summary>โทเคนบนกระดาน</summary>
