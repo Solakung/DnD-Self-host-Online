@@ -92,6 +92,69 @@ const SKILLS = [
   { k: 'survival', th: 'เอาตัวรอด', en: 'Survival', ab: 'wis' },
 ];
 
+// ผู้ร่ายเวท: t = full/half/pact, ab = ค่าสถานะร่ายเวท, prep = สูตรเวทที่เตรียมได้
+const CASTER = {
+  Bard: { t: 'full', ab: 'cha' }, Cleric: { t: 'full', ab: 'wis', prep: 'full' }, Druid: { t: 'full', ab: 'wis', prep: 'full' },
+  Sorcerer: { t: 'full', ab: 'cha' }, Wizard: { t: 'full', ab: 'int', prep: 'full' },
+  Paladin: { t: 'half', ab: 'cha', prep: 'half' }, Ranger: { t: 'half', ab: 'wis' }, Warlock: { t: 'pact', ab: 'cha' },
+};
+const FULL_SLOTS = [
+  [], [2], [3], [4, 2], [4, 3], [4, 3, 2], [4, 3, 3], [4, 3, 3, 1], [4, 3, 3, 2], [4, 3, 3, 3, 1], [4, 3, 3, 3, 2],
+  [4, 3, 3, 3, 2, 1], [4, 3, 3, 3, 2, 1], [4, 3, 3, 3, 2, 1, 1], [4, 3, 3, 3, 2, 1, 1], [4, 3, 3, 3, 2, 1, 1, 1],
+  [4, 3, 3, 3, 2, 1, 1, 1], [4, 3, 3, 3, 2, 1, 1, 1, 1], [4, 3, 3, 3, 3, 1, 1, 1, 1], [4, 3, 3, 3, 3, 2, 1, 1, 1], [4, 3, 3, 3, 3, 2, 2, 1, 1],
+];
+const spellAb = c => c.spellAb || CASTER[c.cls]?.ab || null;
+function autoSlots(c) {
+  const r = Array(9).fill(0);
+  const k = CASTER[c.cls];
+  if (!k) return r;
+  if (k.t === 'pact') {
+    const n = c.level === 1 ? 1 : c.level <= 10 ? 2 : c.level <= 16 ? 3 : 4;
+    const lv = c.level <= 2 ? 1 : c.level <= 4 ? 2 : c.level <= 6 ? 3 : c.level <= 8 ? 4 : 5;
+    r[lv - 1] = n;
+    return r;
+  }
+  const cl = k.t === 'full' ? c.level : (c.level >= 2 ? Math.ceil(c.level / 2) : 0);
+  (FULL_SLOTS[cl] || []).forEach((n, i) => { r[i] = n; });
+  return r;
+}
+const slotMax = (c, l) => (c.slotsMax[l] != null ? c.slotsMax[l] : autoSlots(c)[l - 1]);
+function prepMax(c) {
+  const k = CASTER[c.cls];
+  if (!k?.prep) return null;
+  const m = mod(c.scores[spellAb(c) || k.ab]);
+  return Math.max(1, m + (k.prep === 'full' ? c.level : Math.floor(c.level / 2)));
+}
+// กฎ D&D 2024: เผ่า (Species) ไม่ให้โบนัสสถานะ — โบนัสมาจากภูมิหลัง (+2/+1 หรือ +1/+1/+1 ในสามค่าที่ภูมิหลังกำหนด)
+const SPECIES = {
+  Aasimar: { th: 'อาซิมาร์', speed: 30 }, Dragonborn: { th: 'ดราก้อนบอร์น', speed: 30 }, Dwarf: { th: 'ดวาร์ฟ', speed: 30 },
+  Elf: { th: 'เอลฟ์', speed: 30 }, Gnome: { th: 'โนม', speed: 30 }, Goliath: { th: 'โกไลแอธ', speed: 35 },
+  Halfling: { th: 'ฮาล์ฟลิ่ง', speed: 30 }, Human: { th: 'มนุษย์', speed: 30 }, Orc: { th: 'ออร์ค', speed: 30 }, Tiefling: { th: 'เทียฟลิง', speed: 30 },
+};
+const BACKGROUNDS = {
+  Acolyte: { th: 'ผู้รับใช้ศาสนา', ab: ['int', 'wis', 'cha'], sk: ['insight', 'religion'], tool: "Calligrapher's Supplies", feat: 'Magic Initiate (Cleric)' },
+  Artisan: { th: 'ช่างฝีมือ', ab: ['str', 'dex', 'int'], sk: ['investigation', 'persuasion'], tool: "Artisan's Tools (1 ชนิด)", feat: 'Crafter' },
+  Charlatan: { th: 'นักต้มตุ๋น', ab: ['dex', 'con', 'cha'], sk: ['deception', 'sleight'], tool: 'Forgery Kit', feat: 'Skilled' },
+  Criminal: { th: 'อาชญากร', ab: ['dex', 'con', 'int'], sk: ['sleight', 'stealth'], tool: "Thieves' Tools", feat: 'Alert' },
+  Entertainer: { th: 'นักแสดง', ab: ['str', 'dex', 'cha'], sk: ['acrobatics', 'performance'], tool: 'Musical Instrument (1 ชนิด)', feat: 'Musician' },
+  Farmer: { th: 'ชาวนา', ab: ['str', 'con', 'wis'], sk: ['animal', 'nature'], tool: "Carpenter's Tools", feat: 'Tough' },
+  Guard: { th: 'ทหารยาม', ab: ['str', 'int', 'wis'], sk: ['athletics', 'perception'], tool: 'Gaming Set (1 ชนิด)', feat: 'Alert' },
+  Guide: { th: 'ไกด์', ab: ['dex', 'con', 'wis'], sk: ['stealth', 'survival'], tool: "Cartographer's Tools", feat: 'Magic Initiate (Druid)' },
+  Hermit: { th: 'ฤๅษี', ab: ['con', 'wis', 'cha'], sk: ['medicine', 'religion'], tool: 'Herbalism Kit', feat: 'Healer' },
+  Merchant: { th: 'พ่อค้า', ab: ['con', 'int', 'cha'], sk: ['animal', 'persuasion'], tool: "Navigator's Tools", feat: 'Lucky' },
+  Noble: { th: 'ขุนนาง', ab: ['str', 'int', 'cha'], sk: ['history', 'persuasion'], tool: 'Gaming Set (1 ชนิด)', feat: 'Skilled' },
+  Sage: { th: 'นักปราชญ์', ab: ['con', 'int', 'wis'], sk: ['arcana', 'history'], tool: "Calligrapher's Supplies", feat: 'Magic Initiate (Wizard)' },
+  Sailor: { th: 'กะลาสี', ab: ['str', 'dex', 'wis'], sk: ['acrobatics', 'perception'], tool: "Navigator's Tools", feat: 'Tavern Brawler' },
+  Scribe: { th: 'อาลักษณ์', ab: ['dex', 'int', 'wis'], sk: ['investigation', 'perception'], tool: "Calligrapher's Supplies", feat: 'Skilled' },
+  Soldier: { th: 'ทหาร', ab: ['str', 'dex', 'con'], sk: ['athletics', 'intimidation'], tool: 'Gaming Set (1 ชนิด)', feat: 'Savage Attacker' },
+  Wayfarer: { th: 'นักเดินทาง', ab: ['dex', 'wis', 'cha'], sk: ['insight', 'stealth'], tool: "Thieves' Tools", feat: 'Lucky' },
+};
+const COIN_GP = { cp: 0.01, sp: 0.1, ep: 0.5, gp: 1, pp: 10 };
+function loadOf(c) {
+  const coins = Object.values(c.coins).reduce((a, n) => a + n, 0) / 50;
+  return c.items.reduce((a, i) => a + i.qty * i.weight, 0) + coins;
+}
+
 const mod = s => Math.floor((s - 10) / 2);
 const profBonus = lvl => Math.ceil(lvl / 4) + 1;
 
@@ -113,6 +176,9 @@ const blankChar = () => ({
   saves: { str: true, con: true }, skills: {},
   acOverride: null, speed: 30, hpMaxOverride: null, hp: null,
   attacks: [], notes: '',
+  raceBonus: {}, bgAsi: { mode: '21', a2: '', a1: '' }, bgSkills: [],
+  spellAb: '', spells: [], slotsMax: {}, slotsUsed: {},
+  items: [], coins: { cp: 0, sp: 0, ep: 0, gp: 0, pp: 0 },
 });
 
 function normChar(o, keepId) {
@@ -127,6 +193,27 @@ function normChar(o, keepId) {
   c.attacks = Array.isArray(o.attacks)
     ? o.attacks.slice(0, 30).map(a => ({ id: uid8(), name: String(a.name || ''), bonus: Number(a.bonus) || 0, dmg: String(a.dmg || '') }))
     : [];
+  c.bgAsi = { mode: o.bgAsi?.mode === '111' ? '111' : '21', a2: ABILITIES.some(a => a.k === o.bgAsi?.a2) ? o.bgAsi.a2 : '', a1: ABILITIES.some(a => a.k === o.bgAsi?.a1) ? o.bgAsi.a1 : '' };
+  c.bgSkills = Array.isArray(o.bgSkills) ? o.bgSkills.filter(k => SKILLS.some(s => s.k === k)) : [];
+  c.raceBonus = {};
+  ABILITIES.forEach(a => { const v = Math.round(Number(o.raceBonus?.[a.k])); if (v) c.raceBonus[a.k] = clamp(v, -5, 5); });
+  const num = (v, a, b) => clamp(Number(v) || 0, a, b);
+  c.spellAb = ABILITIES.some(a => a.k === o.spellAb) ? o.spellAb : '';
+  c.spells = Array.isArray(o.spells)
+    ? o.spells.slice(0, 200).map(x => ({ id: uid8(), name: String(x.name || '').slice(0, 60), lvl: Math.round(num(x.lvl, 0, 9)), prep: !!x.prep, dmg: String(x.dmg || '').slice(0, 30) }))
+    : [];
+  c.slotsMax = {}; c.slotsUsed = {};
+  for (let l = 1; l <= 9; l++) {
+    const m = o.slotsMax?.[l];
+    if (m != null && m !== '' && Number.isFinite(Number(m))) c.slotsMax[l] = Math.round(num(m, 0, 20));
+    const u = o.slotsUsed?.[l];
+    if (u != null && Number.isFinite(Number(u))) c.slotsUsed[l] = Math.round(num(u, 0, 20));
+  }
+  c.items = Array.isArray(o.items)
+    ? o.items.slice(0, 200).map(x => ({ id: uid8(), name: String(x.name || '').slice(0, 60), qty: Math.round(num(x.qty, 0, 9999)), weight: num(x.weight, 0, 9999), eq: !!x.eq }))
+    : [];
+  c.coins = {};
+  ['cp', 'sp', 'ep', 'gp', 'pp'].forEach(k => { c.coins[k] = Math.round(num(o.coins?.[k], 0, 99999999)); });
   return c;
 }
 
@@ -445,6 +532,57 @@ function buildSheet() {
       h('button', { class: 'sk-bonus', onclick: () => emitRoll(s.th, bonusExpr(skillBonus(cur(), s))) })));
   });
 
+  // เผ่า (2024): ตั้งความเร็วให้ / ภูมิหลัง: โบนัสสถานะ + ทักษะชำนาญ 2 อย่าง
+  const raceSel = $('#f-race');
+  raceSel.append(h('option', { value: '', text: '— เลือกเผ่า —' }));
+  Object.entries(SPECIES).forEach(([k, v]) => raceSel.append(h('option', { value: k, text: `${v.th} (${k})` })));
+  raceSel.addEventListener('change', () => {
+    const r = SPECIES[raceSel.value];
+    if (r) { cur().speed = r.speed; renderSheet(); }
+    changed();
+  });
+  const bgSel = $('#f-bg');
+  bgSel.append(h('option', { value: '', text: '— เลือกภูมิหลัง —' }));
+  Object.entries(BACKGROUNDS).forEach(([k, v]) => bgSel.append(h('option', { value: k, text: `${v.th} (${k})` })));
+  const abName = k => ABILITIES.find(a => a.k === k).en;
+  const fillAsi = () => {
+    const c = cur(), bg = BACKGROUNDS[bgSel.value];
+    $('#bgAsi').hidden = !bg;
+    if (!bg) return;
+    ['#bgA2', '#bgA1'].forEach(id => {
+      const sel = $(id);
+      sel.innerHTML = '';
+      bg.ab.forEach(k => sel.append(h('option', { value: k, text: `${id === '#bgA2' ? '+2' : '+1'} ${abName(k)}` })));
+    });
+    if (!bg.ab.includes(c.bgAsi.a2)) c.bgAsi.a2 = bg.ab[0];
+    if (!bg.ab.includes(c.bgAsi.a1) || c.bgAsi.a1 === c.bgAsi.a2) c.bgAsi.a1 = bg.ab.find(k => k !== c.bgAsi.a2);
+    $('#bgMode').value = c.bgAsi.mode; $('#bgA2').value = c.bgAsi.a2; $('#bgA1').value = c.bgAsi.a1;
+    $('#bgA2').hidden = $('#bgA1').hidden = c.bgAsi.mode === '111';
+  };
+  const applyBackground = () => {
+    const c = cur();
+    const old = c.raceBonus || {};
+    ABILITIES.forEach(a => { if (old[a.k]) c.scores[a.k] = clamp(c.scores[a.k] - old[a.k], 1, 30); });
+    c.bgSkills.forEach(k => { if (c.skills[k] === 1) c.skills[k] = 0; });
+    c.bgSkills = [];
+    const bg = BACKGROUNDS[bgSel.value];
+    c.raceBonus = {};
+    if (bg) {
+      fillAsi();
+      if (c.bgAsi.mode === '111') bg.ab.forEach(k => { c.raceBonus[k] = 1; });
+      else { c.raceBonus[c.bgAsi.a2] = 2; c.raceBonus[c.bgAsi.a1] = 1; }
+      bg.sk.forEach(k => { if (!c.skills[k]) { c.skills[k] = 1; c.bgSkills.push(k); } });
+    } else $('#bgAsi').hidden = true;
+    ABILITIES.forEach(a => { if (c.raceBonus[a.k]) c.scores[a.k] = clamp(c.scores[a.k] + c.raceBonus[a.k], 1, 30); });
+    c.background = bgSel.value;
+    renderSheet(); changed();
+  };
+  bgSel.addEventListener('change', applyBackground);
+  $('#bgMode').addEventListener('change', e => { cur().bgAsi.mode = e.target.value; applyBackground(); });
+  $('#bgA2').addEventListener('change', e => { cur().bgAsi.a2 = e.target.value; if (cur().bgAsi.a1 === e.target.value) cur().bgAsi.a1 = ''; applyBackground(); });
+  $('#bgA1').addEventListener('change', e => { cur().bgAsi.a1 = e.target.value; if (cur().bgAsi.a2 === e.target.value) cur().bgAsi.a2 = ''; applyBackground(); });
+  fillAsiRef = fillAsi;
+
   // ฟิลด์ทั่วไป
   $$('[data-f]').forEach(el => el.addEventListener('input', () => {
     const c = cur();
@@ -500,7 +638,7 @@ function buildSheet() {
   const assign = vals => {
     const c = cur();
     const sorted = [...vals].sort((a, b) => b - a);
-    CLASSES[c.cls].pri.forEach((k, i) => { c.scores[k] = sorted[i]; });
+    CLASSES[c.cls].pri.forEach((k, i) => { c.scores[k] = clamp(sorted[i] + (c.raceBonus[k] || 0), 1, 30); });
     renderSheet(); changed();
   };
   $('#abRoll').onclick = () => {
@@ -510,7 +648,7 @@ function buildSheet() {
     toast(`สุ่มได้ ${[...vals].sort((a, b) => b - a).join(', ')} (จัดตามอาชีพให้แล้ว แก้ได้)`, 5000);
   };
   $('#abStd').onclick = () => assign([15, 14, 13, 12, 10, 8]);
-  $('#abReset').onclick = () => { ABILITIES.forEach(a => { cur().scores[a.k] = 10; }); renderSheet(); changed(); };
+  $('#abReset').onclick = () => { ABILITIES.forEach(a => { cur().scores[a.k] = 10 + (cur().raceBonus[a.k] || 0); }); renderSheet(); changed(); };
 
   // Initiative / HP
   $('#init').onclick = () => emitRoll('Initiative', bonusExpr(mod(cur().scores.dex)));
@@ -522,6 +660,24 @@ function buildSheet() {
     changed();
   }));
   $('#hpFull').onclick = () => { cur().hp = null; $('#f-hp').value = maxHp(cur()); changed(); };
+
+  // เวทมนตร์ / กระเป๋า
+  $('#spellAdd').onclick = () => {
+    const c = cur();
+    c.spells.push({ id: uid8(), name: '', lvl: 1, prep: false, dmg: '' });
+    renderSpells(); changed();
+  };
+  $('#slotEdit').onclick = () => { slotEditing = !slotEditing; $('#slotEdit').classList.toggle('on', slotEditing); renderSlots(); };
+  $('#slotReset').onclick = () => { cur().slotsUsed = {}; renderSlots(); changed(); toast('คืนช่องเวทครบแล้ว'); };
+  $('#spAtk').onclick = () => {
+    const c = cur(), ab = spellAb(c);
+    if (!ab) { toast('เลือก "ค่าร่ายเวท" ก่อน'); return; }
+    emitRoll('โจมตีด้วยเวท', bonusExpr(profBonus(c.level) + mod(c.scores[ab])));
+  };
+  $('#itemAdd').onclick = () => { cur().items.push({ id: uid8(), name: '', qty: 1, weight: 0, eq: false }); renderInventory(); changed(); };
+  $('#coins').append(...['pp', 'gp', 'ep', 'sp', 'cp'].map(k => h('label', {},
+    k.toUpperCase(),
+    h('input', { type: 'number', min: 0, inputmode: 'numeric', 'data-coin': k, oninput: e => { cur().coins[k] = Math.max(0, Math.round(Number(e.target.value) || 0)); changed(); } }))));
 
   // อาวุธ
   $('#atkAdd').onclick = () => {
@@ -548,8 +704,118 @@ function renderAttacks() {
   });
 }
 
+let slotEditing = false;
+let fillAsiRef = () => {};
+
+function refreshSpellStats() {
+  const c = cur(), ab = spellAb(c);
+  $('#spDc').textContent = ab ? 8 + profBonus(c.level) + mod(c.scores[ab]) : '–';
+  $('#spAtk').textContent = ab ? fmt(profBonus(c.level) + mod(c.scores[ab])) : '–';
+  renderSlots();
+  const pm = prepMax(c);
+  const np = c.spells.filter(x => x.lvl > 0 && x.prep).length;
+  $('#spPrep').textContent = pm == null ? `${np}` : `${np}/${pm}`;
+  $('#spPrep').style.color = pm != null && np > pm ? 'var(--red)' : '';
+}
+
+function renderSlots() {
+  const c = cur();
+  const box = $('#slots');
+  box.innerHTML = '';
+  for (let l = 1; l <= 9; l++) {
+    const max = slotMax(c, l);
+    if (!max && !slotEditing) continue;
+    const used = clamp(c.slotsUsed[l] || 0, 0, max);
+    const pips = h('div', { class: 'pips' });
+    for (let i = 0; i < max; i++) {
+      pips.append(h('button', {
+        class: 'pip' + (i < used ? ' used' : ''), 'aria-label': `ช่องเลเวล ${l} ใบที่ ${i + 1}`,
+        onclick: () => { c.slotsUsed[l] = i < used ? i : i + 1; renderSlots(); changed(); },
+      }));
+    }
+    box.append(h('div', { class: 'slot-row' },
+      h('span', { class: 'lv', text: `เลเวล ${l}` }), pips,
+      slotEditing ? h('input', {
+        type: 'number', min: 0, max: 20, inputmode: 'numeric', placeholder: String(autoSlots(c)[l - 1]), title: 'จำนวนช่อง (ว่าง = อัตโนมัติ)',
+        value: c.slotsMax[l] ?? '',
+        onchange: e => { if (e.target.value === '') delete c.slotsMax[l]; else c.slotsMax[l] = clamp(Math.round(Number(e.target.value) || 0), 0, 20); renderSlots(); changed(); },
+      }) : null));
+  }
+  const any = [1, 2, 3, 4, 5, 6, 7, 8, 9].some(l => slotMax(c, l) > 0);
+  $('#slotHint').textContent = any ? (CASTER[c.cls]?.t === 'pact' && !slotEditing ? 'Warlock: ช่องเวทคืนเมื่อพักสั้นหรือพักยาว' : '')
+    : 'อาชีพนี้ไม่มีช่องเวทตามปกติ — กด "แก้จำนวน" เพื่อใส่เอง (เช่น Eldritch Knight, เผ่า/ฟีทที่ให้เวท)';
+}
+
+function castSpell(c, sp) {
+  const name = sp.name || 'เวท';
+  let lv = sp.lvl;
+  if (sp.lvl > 0) {
+    lv = 0;
+    for (let l = sp.lvl; l <= 9; l++) if (slotMax(c, l) - (c.slotsUsed[l] || 0) > 0) { lv = l; break; }
+    if (!lv) { toast('ช่องเวทหมดแล้ว'); return; }
+    c.slotsUsed[lv] = (c.slotsUsed[lv] || 0) + 1;
+    renderSlots(); changed();
+  }
+  if (sp.dmg) emitRoll(`${name} (${lv ? 'เลเวล ' + lv : 'Cantrip'})`, sp.dmg);
+  else toast(`ร่าย ${name}${lv ? ` ด้วยช่องเลเวล ${lv}` : ''}`);
+}
+
+function renderSpells() {
+  const c = cur();
+  renderSlots();
+  const box = $('#spells');
+  box.innerHTML = '';
+  c.spells.map((sp, i) => ({ sp, i })).sort((a, b) => a.sp.lvl - b.sp.lvl || a.i - b.i).forEach(({ sp }) => {
+    const lvSel = h('select', { title: 'เลเวลเวท', onchange: e => { sp.lvl = Number(e.target.value); renderSpells(); changed(); } },
+      ...Array.from({ length: 10 }, (_, l) => h('option', { value: l, text: l === 0 ? 'Cantrip' : `เลเวล ${l}`, selected: l === sp.lvl })));
+    box.append(h('div', { class: 'spell' },
+      h('input', { placeholder: 'ชื่อเวท', value: sp.name, maxlength: 60, oninput: e => { sp.name = e.target.value; changed(); } }),
+      lvSel,
+      h('input', { placeholder: 'ดาเมจ/ฮีล เช่น 8d6', value: sp.dmg, oninput: e => { sp.dmg = e.target.value; changed(); } }),
+      h('div', { class: 'sp-btns' },
+        h('button', { class: 'primary', text: '✨ ร่าย', onclick: () => castSpell(c, sp) }),
+        sp.lvl > 0 ? h('label', {}, h('input', { type: 'checkbox', checked: sp.prep, onchange: e => { sp.prep = e.target.checked; refreshSpellStats(); changed(); } }), 'เตรียม') : null,
+        h('button', { class: 'danger', text: '✕', 'aria-label': 'ลบ', onclick: () => { c.spells = c.spells.filter(x => x !== sp); renderSpells(); changed(); } }))));
+  });
+}
+
+function renderInventory() {
+  const c = cur();
+  $$('[data-coin]').forEach(el => { el.value = c.coins[el.dataset.coin] || ''; });
+  const box = $('#items');
+  box.innerHTML = '';
+  c.items.forEach(it => {
+    box.append(h('div', { class: 'item' },
+      h('input', { placeholder: 'ชื่อของ', value: it.name, maxlength: 60, oninput: e => { it.name = e.target.value; changed(); } }),
+      h('input', { type: 'number', min: 0, class: 'sm', title: 'จำนวน', value: it.qty, inputmode: 'numeric', oninput: e => { it.qty = Math.max(0, Math.round(Number(e.target.value) || 0)); changed(); } }),
+      h('input', { type: 'number', min: 0, step: '0.1', class: 'sm', title: 'น้ำหนักต่อชิ้น (lb)', placeholder: 'lb', value: it.weight || '', inputmode: 'decimal', oninput: e => { it.weight = Math.max(0, Number(e.target.value) || 0); changed(); } }),
+      h('label', {}, h('input', { type: 'checkbox', checked: it.eq, onchange: e => { it.eq = e.target.checked; changed(); } }), 'ใช้'),
+      h('button', { class: 'danger', text: '✕', 'aria-label': 'ลบ', onclick: () => { c.items = c.items.filter(x => x !== it); renderInventory(); changed(); } })));
+  });
+}
+
+function refreshLoad() {
+  const c = cur();
+  const w = loadOf(c);
+  const cap = c.scores.str * 15;
+  const r = x => Math.round(x * 10) / 10;
+  const gp = Object.entries(c.coins).reduce((a, [k, n]) => a + n * COIN_GP[k], 0);
+  const st = w > c.scores.str * 10 ? 'หนักมาก (Heavily Encumbered)' : w > c.scores.str * 5 ? 'เริ่มหนัก (Encumbered)' : 'ปกติ';
+  $('#loadTxt').textContent = `น้ำหนักรวม ${r(w)} / ${cap} lb (STR×15) · สถานะ: ${st} · เงินทั้งหมด ≈ ${r(gp)} gp (เหรียญ 50 เหรียญ = 1 lb) · เกิน STR×5 / ×10 ใช้กฎเสริมเรื่องความหนัก`;
+  const f = $('#loadFill');
+  const pct = clamp((w / cap) * 100, 0, 100);
+  f.style.width = pct + '%';
+  f.className = w > c.scores.str * 10 || w > cap ? 'low' : w > c.scores.str * 5 ? 'mid' : '';
+}
+
 function renderSheet() {
   const c = cur();
+  const rs = $('#f-race');
+  $$('option[data-legacy]', rs).forEach(o => o.remove());
+  if (c.race && !SPECIES[c.race]) rs.append(h('option', { value: c.race, text: c.race, 'data-legacy': '1' }));
+  const bs = $('#f-bg');
+  $$('option[data-legacy]', bs).forEach(o => o.remove());
+  if (c.background && !BACKGROUNDS[c.background]) bs.append(h('option', { value: c.background, text: c.background, 'data-legacy': '1' }));
   $$('[data-f]').forEach(el => {
     const k = el.dataset.f;
     el.value = k === 'hp' ? (c.hp ?? maxHp(c)) : (c[k] ?? '');
@@ -559,7 +825,13 @@ function renderSheet() {
     $(`[data-save="${a.k}"]`).checked = !!c.saves[a.k];
   });
   $('#charSelect').value = activeId;
+  fillAsiRef();
+  const bgd = BACKGROUNDS[c.background];
+  const bonusTxt = Object.entries(c.raceBonus || {}).map(([k, v]) => `+${v} ${k.toUpperCase()}`).join(' ');
+  $('#raceHint').textContent = bgd ? `ภูมิหลัง: ${bonusTxt} (รวมในค่าสถานะแล้ว) · ชำนาญ ${bgd.sk.map(k => SKILLS.find(s => s.k === k).th).join(', ')} · เครื่องมือ ${bgd.tool} · Feat ${bgd.feat}` : '';
   renderAttacks();
+  renderSpells();
+  renderInventory();
   refreshDerived();
 }
 
@@ -577,6 +849,8 @@ function refreshDerived() {
     $('.sk-bonus', row).textContent = fmt(skillBonus(c, s));
     $('.sk-state', row).textContent = ['○', '●', '◆'][c.skills[s.k] || 0];
   });
+  refreshSpellStats();
+  refreshLoad();
   $('#init').textContent = fmt(mod(c.scores.dex));
   $('#passive').textContent = 10 + skillBonus(c, SKILLS.find(s => s.k === 'perception'));
 

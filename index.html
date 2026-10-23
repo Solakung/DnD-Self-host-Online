@@ -38,15 +38,17 @@
     <div class="card">
       <div class="grid-2">
         <label>ชื่อตัวละคร<input data-f="name" maxlength="40" autocomplete="off"></label>
-        <label>เผ่าพันธุ์<input data-f="race" list="raceList" maxlength="30" autocomplete="off"></label>
+        <label>เผ่าพันธุ์ (Species)<select data-f="race" id="f-race"></select></label>
         <label>อาชีพ (Class)<select data-f="cls" id="f-cls"></select></label>
         <label>เลเวล<input data-f="level" data-t="num" type="number" min="1" max="20" inputmode="numeric"></label>
-        <label class="span2">ภูมิหลัง<input data-f="background" maxlength="40" autocomplete="off"></label>
+        <label class="span2">ภูมิหลัง (Background)<select data-f="background" id="f-bg"></select></label>
+        <div class="span2 bg-asi" id="bgAsi" hidden>
+          <select id="bgMode" aria-label="รูปแบบโบนัส"><option value="21">+2 / +1</option><option value="111">+1 / +1 / +1</option></select>
+          <select id="bgA2" aria-label="ค่าที่ได้ +2"></select>
+          <select id="bgA1" aria-label="ค่าที่ได้ +1"></select>
+        </div>
+        <p class="hint span2" id="raceHint" style="margin:0"></p>
       </div>
-      <datalist id="raceList">
-        <option value="Human"><option value="Elf"><option value="Dwarf"><option value="Halfling">
-        <option value="Gnome"><option value="Half-Elf"><option value="Half-Orc"><option value="Tiefling"><option value="Dragonborn">
-      </datalist>
     </div>
 
     <div class="card">
@@ -95,6 +97,40 @@
     <div class="card">
       <div class="card-head"><h3>อาวุธ &amp; สกิลโจมตี</h3><button id="atkAdd">+ เพิ่ม</button></div>
       <div id="attacks" class="attacks"></div>
+    </div>
+
+    <div class="card" id="spellCard">
+      <div class="card-head">
+        <h3>เวทมนตร์</h3>
+        <label class="inline">ค่าร่ายเวท
+          <select data-f="spellAb" id="f-spellAb">
+            <option value="">อัตโนมัติตามอาชีพ</option>
+            <option value="int">INT</option><option value="wis">WIS</option><option value="cha">CHA</option>
+            <option value="str">STR</option><option value="dex">DEX</option><option value="con">CON</option>
+          </select>
+        </label>
+      </div>
+      <div class="stats">
+        <div class="stat"><span>Spell Save DC</span><b id="spDc">–</b></div>
+        <div class="stat"><span>โจมตีด้วยเวท</span><button id="spAtk" class="big-btn">–</button></div>
+        <div class="stat"><span>เตรียมแล้ว</span><b id="spPrep">–</b></div>
+      </div>
+      <div class="card-head sub"><h3>ช่องเวท</h3>
+        <div class="btn-row"><button id="slotEdit">แก้จำนวน</button><button id="slotReset">พักยาว (คืนช่อง)</button></div>
+      </div>
+      <div id="slots" class="slots"></div>
+      <p class="hint" id="slotHint"></p>
+      <div class="card-head sub"><h3>รายการเวท</h3><button id="spellAdd">+ เพิ่มเวท</button></div>
+      <div id="spells" class="spells"></div>
+      <p class="hint">กด ✨ ร่าย จะหักช่องเวทเลเวลต่ำสุดที่ยังเหลือ (ร่ายเสริมพลังให้อัตโนมัติ) ถ้าใส่ดาเมจไว้จะทอยให้เลย · เวทเลเวล 0 = Cantrip ไม่ใช้ช่อง · แตะวงกลมช่องเวทเพื่อใช้/คืนเอง</p>
+    </div>
+
+    <div class="card" id="invCard">
+      <div class="card-head"><h3>กระเป๋า</h3><button id="itemAdd">+ เพิ่มของ</button></div>
+      <div class="coins" id="coins"></div>
+      <div id="items" class="items"></div>
+      <div class="hpbar"><i id="loadFill"></i></div>
+      <p id="loadTxt" class="hint"></p>
     </div>
 
     <div class="card">

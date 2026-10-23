@@ -211,3 +211,31 @@ dialog::backdrop { background: #000a; }
   .brand span { display: none; }
   #bigTotal { font-size: 3.4rem; }
 }
+
+/* ---------- spells / inventory ---------- */
+label.inline { flex-direction: row; align-items: center; gap: 6px; }
+label.inline select { width: auto; }
+.card-head.sub { margin-top: 14px; margin-bottom: 6px; }
+.card-head.sub h3 { font-size: .95rem; color: var(--muted); }
+.slots { display: flex; flex-direction: column; gap: 4px; }
+.slot-row { display: flex; align-items: center; gap: 8px; }
+.slot-row .lv { width: 64px; color: var(--muted); font-size: .85rem; }
+.pips { display: flex; gap: 6px; flex-wrap: wrap; flex: 1; }
+.pip { width: 26px; height: 26px; padding: 0; border-radius: 50%; border: 2px solid var(--gold); background: var(--gold); }
+.pip.used { background: transparent; }
+.slot-row input { width: 64px; text-align: center; }
+.spells { display: flex; flex-direction: column; gap: 8px; }
+.spell { display: grid; grid-template-columns: 1fr 100px 1fr; gap: 6px; align-items: center; }
+.spell .sp-btns { grid-column: 1 / -1; display: flex; gap: 6px; align-items: center; flex-wrap: wrap; }
+.spell .sp-btns label { flex-direction: row; align-items: center; gap: 4px; }
+.spell .sp-btns button:first-of-type { flex: 1; }
+.items { display: flex; flex-direction: column; gap: 6px; margin: 8px 0; }
+.item { display: grid; grid-template-columns: 1fr 58px 66px auto auto; gap: 6px; align-items: center; }
+.item input[type=number] { text-align: center; padding: 7px 4px; }
+.item label { flex-direction: row; align-items: center; gap: 3px; white-space: nowrap; }
+.coins { display: grid; grid-template-columns: repeat(5, 1fr); gap: 6px; }
+.coins label { align-items: center; text-align: center; }
+.coins input { text-align: center; padding: 6px 2px; }
+
+.bg-asi { display: flex; gap: 6px; }
+.bg-asi select { flex: 1; }
