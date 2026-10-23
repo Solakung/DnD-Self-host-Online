@@ -978,6 +978,20 @@ function draw() {
     ctx.fillText(label, lx, ly);
   }
 
+  if (ruler) {
+    const a = ruler.a, b = ruler.b || ruler.a;
+    ctx.beginPath(); ctx.moveTo(a.x * CELL, a.y * CELL); ctx.lineTo(b.x * CELL, b.y * CELL);
+    ctx.lineWidth = 3 / view.s; ctx.strokeStyle = '#ffd86b'; ctx.setLineDash([8 / view.s, 5 / view.s]); ctx.stroke(); ctx.setLineDash([]);
+    [a, b].forEach(q => { ctx.beginPath(); ctx.arc(q.x * CELL, q.y * CELL, 5 / view.s, 0, Math.PI * 2); ctx.fillStyle = '#ffd86b'; ctx.fill(); });
+    const ft = Math.max(Math.abs(b.x - a.x), Math.abs(b.y - a.y)) * 5;
+    const label = `${ft} ft`, fs = 14 / view.s;
+    ctx.font = `700 ${fs}px Sarabun, sans-serif`;
+    const tw = ctx.measureText(label).width, lx = (a.x + b.x) / 2 * CELL, ly = (a.y + b.y) / 2 * CELL - 8 / view.s;
+    ctx.fillStyle = 'rgba(0,0,0,.85)';
+    ctx.fillRect(lx - tw / 2 - 5 / view.s, ly - fs - 4 / view.s, tw + 10 / view.s, fs + 8 / view.s);
+    ctx.fillStyle = '#ffd86b'; ctx.textAlign = 'center'; ctx.textBaseline = 'bottom'; ctx.fillText(label, lx, ly);
+  }
+
   $('#zoomLbl').textContent = Math.round(view.s * 100) + '%';
 }
 
@@ -987,6 +1001,13 @@ function loadBg() {
   img.onload = () => { bgImg = img; draw(); };
   img.onerror = () => { bgImg = null; toast('โหลดรูปพื้นหลังไม่ได้'); draw(); };
   img.src = bgUrl;
+}
+
+/* --- ไม้บรรทัด (เฉพาะในเครื่องตัวเอง) --- */
+let rulerOn = false, ruler = null;
+function rulerPt(ox, oy) {
+  const w = toWorld(ox, oy);
+  return { x: clamp(Math.round(w.x / CELL), 0, GRID), y: clamp(Math.round(w.y / CELL), 0, GRID) };
 }
 
 /* --- การโต้ตอบ (เมาส์ + ทัช ผ่าน Pointer Events) --- */
@@ -1000,6 +1021,13 @@ cv.addEventListener('pointerdown', e => {
     return;
   }
   if (ptrs.size > 2) return;
+
+  if (rulerOn) {
+    const q = rulerPt(e.offsetX, e.offsetY);
+    ruler = { a: q, b: q };
+    draw();
+    return;
+  }
 
   // 1) จุดจับปรับขนาดของรูปที่เลือกอยู่
   if (hitHandle(e.offsetX, e.offsetY)) {
@@ -1047,6 +1075,7 @@ cv.addEventListener('pointermove', e => {
     draw();
     return;
   }
+  if (rulerOn && ruler) { ruler.b = rulerPt(e.offsetX, e.offsetY); draw(); return; }
   if (drag) {
     const w = toWorld(e.offsetX, e.offsetY);
     if (drag.kind === 'token') {
@@ -1187,6 +1216,7 @@ function updateSelBar() {
   const ok = t ? canEdit(t) : canEditMap(m);
   $('#selName').textContent = (m ? '🖼 ' : '') + (obj.name || '(ไม่มีชื่อ)');
   $('#selEdit').hidden = !t;
+  $('#selDup').hidden = !t;
   $('#selFit').hidden = !m;
   $('#selEdit').disabled = !ok;
   $('#selFit').disabled = !ok;
@@ -1200,10 +1230,10 @@ function centerOn(t) {
   draw();
 }
 
-function freeSpot(size) {
+function freeSpot(size, anchor) {
   const c = toWorld(W / 2, H / 2);
-  const bx = clamp(Math.floor(c.x / CELL - size / 2), 0, GRID - size);
-  const by = clamp(Math.floor(c.y / CELL - size / 2), 0, GRID - size);
+  const bx = anchor ? clamp(anchor.x, 0, GRID - size) : clamp(Math.floor(c.x / CELL - size / 2), 0, GRID - size);
+  const by = anchor ? clamp(anchor.y, 0, GRID - size) : clamp(Math.floor(c.y / CELL - size / 2), 0, GRID - size);
   const list = Object.values(tokens);
   const free = (x, y) => x >= 0 && y >= 0 && x + size <= GRID && y + size <= GRID
     && !list.some(t => x < t.x + t.size && x + size > t.x && y < t.y + t.size && y + size > t.y);
@@ -1372,6 +1402,26 @@ function bindBoardUI() {
   $('#zoomIn').onclick = () => { zoomAt(W / 2, H / 2, 1.25); draw(); };
   $('#zoomOut').onclick = () => { zoomAt(W / 2, H / 2, 1 / 1.25); draw(); };
   $('#zoomFit').onclick = () => { fitView(); draw(); };
+  $('#rulerBtn').onclick = () => {
+    rulerOn = !rulerOn; ruler = null;
+    $('#rulerBtn').classList.toggle('on', rulerOn);
+    $('#rulerBtn').setAttribute('aria-pressed', rulerOn);
+    draw();
+  };
+  $('#selDup').onclick = () => {
+    const t = tokens[selected];
+    if (!t) return;
+    const base = t.name.replace(/\s+\d+$/, '') || 'โทเคน';
+    const esc = base.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+    const re = new RegExp('^' + esc + '(?:\\s+(\\d+))?$');
+    let max = 1;
+    Object.values(tokens).forEach(o => { const m = re.exec(o.name); if (m) max = Math.max(max, m[1] ? +m[1] : 1); });
+    const name = `${base} ${max + 1}`.slice(0, 40);
+    const pos = freeSpot(t.size, { x: t.x + t.size, y: t.y });
+    const id = uid8();
+    tokenPut({ id, name, size: t.size, color: t.color, x: pos.x, y: pos.y, owner: myId() });
+    if (!online()) selectToken(id);
+  };
   $('#selEdit').onclick = () => { const t = tokens[selected]; if (t) openTokenDialog(t); };
   $('#selDel').onclick = () => {
     const m = maps[selectedMap];

@@ -38,6 +38,7 @@ button {
 }
 button:hover { border-color: var(--gold); }
 button:disabled { opacity: .4; cursor: not-allowed; }
+button.on { background: var(--gold); color: #1a1405; border-color: transparent; font-weight: 700; }
 button.primary { background: var(--gold); color: #1a1405; border-color: transparent; font-weight: 700; }
 button.danger { color: #ff8a84; }
 input, select, textarea {
