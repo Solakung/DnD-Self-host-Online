@@ -1,9 +1,9 @@
-// วางค่า config จาก Firebase Console → Project settings → Your apps → Web app
-// ถ้ายังไม่ได้ใส่ แอปจะทำงานแบบออฟไลน์ (ตัวละคร/กระดาน/ลูกเต๋าใช้ได้หมด แต่ไม่ซิงก์กับเพื่อน)
+// ค่า config จาก Firebase Console (โปรเจกต์ dnd-online-40f7a)
+// ใช้เฉพาะ Realtime Database + Anonymous Auth จึงไม่ต้องใส่ Analytics
 export const firebaseConfig = {
-  apiKey: "PASTE_API_KEY",
-  authDomain: "YOUR-PROJECT.firebaseapp.com",
-  databaseURL: "https://YOUR-PROJECT-default-rtdb.asia-southeast1.firebasedatabase.app",
-  projectId: "YOUR-PROJECT",
-  appId: "PASTE_APP_ID",
+  apiKey: "AIzaSyCtBBUMLYZ83thwkvcJJtrOAb7zgq4Fysg",
+  authDomain: "dnd-online-40f7a.firebaseapp.com",
+  databaseURL: "https://dnd-online-40f7a-default-rtdb.asia-southeast1.firebasedatabase.app",
+  projectId: "dnd-online-40f7a",
+  appId: "1:738218595862:web:c1a4afc4413300a9254737",
 };
