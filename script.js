@@ -25,7 +25,7 @@ const store = {
     try { const v = localStorage.getItem('dndtable.' + k); return v ? JSON.parse(v) : d; } catch { return d; }
   },
   set(k, v) {
-    try { localStorage.setItem('dndtable.' + k, JSON.stringify(v)); } catch { /* เต็ม/ปิดไว้ */ }
+    try { localStorage.setItem('dndtable.' + k, JSON.stringify(v)); return true; } catch { return false; }
   },
 };
 const uid8 = () => Math.random().toString(36).slice(2, 10);
@@ -184,6 +184,9 @@ async function enterRoom(code, create) {
   room.uid = uid;
   tokens = {};
   selected = null;
+  maps = {};
+  selectedMap = null;
+  Object.keys(imgs).forEach(k => delete imgs[k]);
   $('#logList').innerHTML = '';
 
   const u = room.unsubs;
@@ -204,6 +207,22 @@ async function enterRoom(code, create) {
     if (selected === s.key) selected = null;
     renderTokenList(); updateSelBar(); draw();
   }));
+
+  const mref = roomRef('maps');
+  const putMap = s => { maps[s.key] = normMap(s.val(), s.key); renderMapList(); updateSelBar(); draw(); };
+  u.push(D.onChildAdded(mref, putMap));
+  u.push(D.onChildChanged(mref, putMap));
+  u.push(D.onChildRemoved(mref, s => {
+    delete maps[s.key];
+    delete imgs[s.key];
+    if (selectedMap === s.key) selectedMap = null;
+    renderMapList(); updateSelBar(); draw();
+  }));
+  const iref = roomRef('mapimg');
+  const putImg = s => loadImg(s.key, s.val());
+  u.push(D.onChildAdded(iref, putImg));
+  u.push(D.onChildChanged(iref, putImg));
+  u.push(D.onChildRemoved(iref, s => { delete imgs[s.key]; draw(); }));
 
   u.push(D.onChildAdded(D.query(roomRef('rolls'), D.limitToLast(40)), s => {
     const r = s.val();
@@ -238,10 +257,13 @@ function leaveRoom(silent) {
     store.set('room', null);
     tokens = store.get('tokens', {});
     selected = null;
+    maps = loadLocalMaps();
+    selectedMap = null;
+    rebuildLocalImgs();
     bgUrl = store.get('bg', '');
     loadBg();
     $('#logList').innerHTML = '';
-    renderTokenList(); renderParty(); updateSelBar(); updateRoomUI(); draw();
+    renderTokenList(); renderMapList(); renderParty(); updateSelBar(); updateRoomUI(); draw();
   }
 }
 
@@ -571,6 +593,9 @@ const colorFor = id => COLORS[[...String(id)].reduce((a, ch) => a + ch.charCodeA
 
 let tokens = store.get('tokens', {});
 let selected = null;
+let maps = loadLocalMaps();
+let selectedMap = null;
+const imgs = {}; // id -> HTMLImageElement ที่โหลดเสร็จแล้ว
 let bgUrl = store.get('bg', '');
 let bgImg = null;
 const view = { s: 1, x: 0, y: 0 };
@@ -599,6 +624,209 @@ function normToken(t, id) {
   };
 }
 const canEdit = t => iAmDM() || t.owner === myId();
+
+/* =====================================================================
+   รูปบนกระดาน (แผนที่ / ภาพประกอบ) — ผู้เล่นแทรกเองจากเครื่องได้
+   - ย่อรูปในเบราว์เซอร์ก่อน แล้วเก็บเป็น data URL
+   - ออนไลน์: เก็บขนาด/ตำแหน่งที่ rooms/<code>/maps และตัวรูปที่ rooms/<code>/mapimg
+     (แยกกัน เพื่อไม่ให้ทุกครั้งที่ลากต้องส่งรูปซ้ำ)
+   ===================================================================== */
+const round2 = v => Math.round(v * 2) / 2;
+const MAX_IMG_CHARS = 700000;
+
+function normMap(m, id) {
+  const num = (v, a, b, d) => clamp(Number.isFinite(Number(v)) ? Number(v) : d, a, b);
+  return {
+    id,
+    name: String(m?.name ?? '').slice(0, 40),
+    x: num(m?.x, -50, 100, 0),
+    y: num(m?.y, -50, 100, 0),
+    w: num(m?.w, 0.5, 100, 10),
+    h: num(m?.h, 0.5, 100, 10),
+    owner: String(m?.owner ?? ''),
+    created: Number(m?.created) || 0,
+    src: typeof m?.src === 'string' && m.src.startsWith('data:image/') ? m.src : undefined,
+  };
+}
+function loadLocalMaps() {
+  const raw = store.get('maps', {});
+  return Object.fromEntries(Object.entries(raw).map(([k, v]) => [k, normMap(v, k)]));
+}
+const canEditMap = m => iAmDM() || m.owner === myId();
+const sortedMaps = () => Object.values(maps).sort((a, b) => a.created - b.created);
+
+function loadImg(id, src) {
+  if (typeof src !== 'string' || !src.startsWith('data:image/')) return;
+  const im = new Image();
+  im.onload = () => { imgs[id] = im; draw(); };
+  im.src = src;
+}
+function rebuildLocalImgs() {
+  Object.keys(imgs).forEach(k => delete imgs[k]);
+  Object.values(maps).forEach(m => loadImg(m.id, m.src));
+}
+function saveLocalMaps() {
+  if (online()) return;
+  if (!store.set('maps', maps)) toast('พื้นที่เก็บในเบราว์เซอร์เต็ม — ลบรูปเก่าบางรูปก่อน');
+}
+
+function hitMap(px, py) {
+  const w = toWorld(px, py);
+  const cx = w.x / CELL;
+  const cy = w.y / CELL;
+  return sortedMaps().reverse().find(m => cx >= m.x && cx < m.x + m.w && cy >= m.y && cy < m.y + m.h) || null;
+}
+function hitHandle(px, py) {
+  const m = maps[selectedMap];
+  if (!m || !canEditMap(m)) return false;
+  const hx = view.x + (m.x + m.w) * CELL * view.s;
+  const hy = view.y + (m.y + m.h) * CELL * view.s;
+  return Math.hypot(px - hx, py - hy) <= 22;
+}
+
+async function loadBitmap(file) {
+  if (window.createImageBitmap) {
+    try { return await createImageBitmap(file); } catch { /* ลองวิธีสำรอง */ }
+  }
+  return new Promise((res, rej) => {
+    const u = URL.createObjectURL(file);
+    const im = new Image();
+    im.onload = () => { URL.revokeObjectURL(u); res(im); };
+    im.onerror = rej;
+    im.src = u;
+  });
+}
+
+// ย่อด้านยาวสุดไม่เกิน 1600px และบีบจนไม่เกิน ~700KB (ลองซ้ำโดยลดขนาด/คุณภาพ)
+async function compressImage(file) {
+  const bmp = await loadBitmap(file);
+  const bw = bmp.width || bmp.naturalWidth;
+  const bh = bmp.height || bmp.naturalHeight;
+  let maxSide = 1600;
+  let q = 0.8;
+  for (let i = 0; i < 7; i++) {
+    const k = Math.min(1, maxSide / Math.max(bw, bh));
+    const c = document.createElement('canvas');
+    c.width = Math.max(1, Math.round(bw * k));
+    c.height = Math.max(1, Math.round(bh * k));
+    const g = c.getContext('2d');
+    g.drawImage(bmp, 0, 0, c.width, c.height);
+    let url = c.toDataURL('image/webp', q);
+    if (!url.startsWith('data:image/webp')) { // เบราว์เซอร์ไม่รองรับ webp → ใช้ jpeg พื้นขาว
+      g.globalCompositeOperation = 'destination-over';
+      g.fillStyle = '#ffffff';
+      g.fillRect(0, 0, c.width, c.height);
+      url = c.toDataURL('image/jpeg', q);
+    }
+    if (url.length <= MAX_IMG_CHARS) return { src: url, w: bw, h: bh };
+    maxSide = Math.round(maxSide * 0.8);
+    q = Math.max(0.45, q - 0.08);
+  }
+  throw new Error('too big');
+}
+
+async function addMapFromFile(file) {
+  if (!file || !file.type.startsWith('image/')) { toast('เลือกไฟล์รูปภาพเท่านั้น'); return; }
+  toast('กำลังย่อรูป...', 8000);
+  let img;
+  try { img = await compressImage(file); } catch { toast('อ่านหรือย่อรูปนี้ไม่ได้'); return; }
+
+  const first = !Object.keys(maps).length; // รูปแรก = แผนที่หลัก เต็มกริด
+  const k = (first ? GRID : 14) / Math.max(img.w, img.h);
+  const w = Math.max(1, round2(img.w * k));
+  const h = Math.max(1, round2(img.h * k));
+  let x = 0;
+  let y = 0;
+  if (!first) {
+    const c = toWorld(W / 2, H / 2);
+    x = round2(clamp(c.x / CELL - w / 2, 0, GRID - 1));
+    y = round2(clamp(c.y / CELL - h / 2, 0, GRID - 1));
+  }
+  const id = uid8();
+  const m = {
+    id, x, y, w, h, owner: myId(), created: Date.now(),
+    name: (file.name || '').replace(/\.[^.]+$/, '').slice(0, 40) || 'แผนที่',
+  };
+  if (online()) {
+    try {
+      await fb.D.set(roomRef(`maps/${id}`), { name: m.name, x, y, w, h, owner: m.owner, created: m.created });
+      await fb.D.set(roomRef(`mapimg/${id}`), img.src);
+    } catch {
+      toast('ส่งรูปเข้าห้องไม่สำเร็จ (เน็ตหลุดหรือไม่มีสิทธิ์)');
+      try { await fb.D.remove(roomRef(`maps/${id}`)); } catch { /* ignore */ }
+      return;
+    }
+  } else {
+    m.src = img.src;
+    maps[id] = m;
+    loadImg(id, img.src);
+    saveLocalMaps();
+    renderMapList();
+    draw();
+  }
+  selectMap(id);
+  toast('วางรูปแล้ว — ลากเพื่อย้าย · ลากวงกลมมุมขวาล่างเพื่อปรับขนาด', 4500);
+}
+
+async function mapDelete(id) {
+  if (online()) {
+    try {
+      await fb.D.remove(roomRef(`mapimg/${id}`)); // ลบรูปก่อน (กฎตรวจเจ้าของจากข้อมูล maps)
+      await fb.D.remove(roomRef(`maps/${id}`));
+    } catch { toast('ลบไม่สำเร็จ (ไม่มีสิทธิ์)'); }
+  } else {
+    delete maps[id];
+    delete imgs[id];
+    if (selectedMap === id) selectedMap = null;
+    saveLocalMaps();
+    renderMapList(); updateSelBar(); draw();
+  }
+}
+
+// ใช้หลังลากย้าย/ปรับขนาดเสร็จ (ค่าใน maps ถูกแก้ไว้แล้วระหว่างลาก)
+async function commitMap(d) {
+  const m = maps[d.id];
+  if (!m) return;
+  if (!online()) { saveLocalMaps(); draw(); return; }
+  const patch = d.kind === 'map' ? { x: m.x, y: m.y } : { w: m.w, h: m.h };
+  try {
+    await fb.D.update(roomRef(`maps/${m.id}`), patch);
+  } catch {
+    if (d.kind === 'map') { m.x = d.ox; m.y = d.oy; } else { m.w = d.ow; m.h = d.oh; }
+    draw();
+    toast('ปรับรูปไม่สำเร็จ (ไม่มีสิทธิ์หรือเน็ตหลุด)');
+  }
+}
+
+// แก้หลายค่าพร้อมกัน เช่น ปุ่ม "เต็มกริด"
+async function patchMap(m, patch) {
+  const old = { x: m.x, y: m.y, w: m.w, h: m.h };
+  Object.assign(m, patch);
+  draw();
+  if (!online()) { saveLocalMaps(); return; }
+  try {
+    await fb.D.update(roomRef(`maps/${m.id}`), patch);
+  } catch {
+    Object.assign(m, old);
+    draw();
+    toast('ไม่สำเร็จ (ไม่มีสิทธิ์หรือเน็ตหลุด)');
+  }
+}
+
+function renderMapList() {
+  const box = $('#mapList');
+  box.innerHTML = '';
+  const arr = sortedMaps();
+  if (!arr.length) {
+    box.append(h('div', { class: 'muted small', text: 'ยังไม่มีรูป — กด "🖼 รูป" เพื่อเพิ่มแผนที่จากเครื่อง' }));
+    return;
+  }
+  arr.forEach(m => {
+    box.append(h('button', { class: 'tok-row' + (m.id === selectedMap ? ' sel' : ''), onclick: () => { selectMap(m.id); centerRect(m.x, m.y, m.w, m.h); } },
+      h('span', { text: '🖼 ' + (m.name || 'รูป') }),
+      h('small', { class: 'muted', text: `${m.w}×${m.h}` })));
+  });
+}
 
 function resize() {
   const r = cv.parentElement.getBoundingClientRect();
@@ -648,6 +876,15 @@ function draw() {
   ctx.fillStyle = '#1b2230';
   ctx.fillRect(0, 0, size, size);
   if (bgImg && bgImg.naturalWidth) ctx.drawImage(bgImg, 0, 0, size, size);
+  sortedMaps().forEach(m => {
+    const im = imgs[m.id];
+    if (im) {
+      ctx.drawImage(im, m.x * CELL, m.y * CELL, m.w * CELL, m.h * CELL);
+    } else {
+      ctx.fillStyle = 'rgba(255,255,255,.06)';
+      ctx.fillRect(m.x * CELL, m.y * CELL, m.w * CELL, m.h * CELL);
+    }
+  });
 
   // เส้นกริด (วาดเฉพาะส่วนที่มองเห็น)
   const x0 = clamp(Math.floor(-view.x / view.s / CELL), 0, GRID);
@@ -672,6 +909,25 @@ function draw() {
     ctx.textBaseline = 'top';
     for (let i = x0; i < x1; i++) ctx.fillText(i + 1, i * CELL + 3 / view.s, 2 / view.s);
     for (let j = Math.max(y0, 1); j < y1; j++) ctx.fillText(j + 1, 3 / view.s, j * CELL + 2 / view.s);
+  }
+
+  // กรอบรูปที่เลือก + จุดจับปรับขนาด
+  const sm = maps[selectedMap];
+  if (sm) {
+    ctx.lineWidth = 3 / view.s;
+    ctx.strokeStyle = '#ffd86b';
+    ctx.setLineDash([10 / view.s, 6 / view.s]);
+    ctx.strokeRect(sm.x * CELL, sm.y * CELL, sm.w * CELL, sm.h * CELL);
+    ctx.setLineDash([]);
+    if (canEditMap(sm)) {
+      ctx.beginPath();
+      ctx.arc((sm.x + sm.w) * CELL, (sm.y + sm.h) * CELL, 12 / view.s, 0, Math.PI * 2);
+      ctx.fillStyle = '#ffd86b';
+      ctx.fill();
+      ctx.lineWidth = 2 / view.s;
+      ctx.strokeStyle = '#1a1405';
+      ctx.stroke();
+    }
   }
 
   // โทเคน (ใหญ่ก่อน เล็กอยู่บน)
@@ -705,7 +961,7 @@ function draw() {
   });
 
   // ระยะที่ลากอยู่
-  if (drag && drag.moved && tokens[drag.id]) {
+  if (drag && drag.kind === 'token' && drag.moved && tokens[drag.id]) {
     const t = tokens[drag.id];
     const ft = Math.max(Math.abs(t.x - drag.sx), Math.abs(t.y - drag.sy)) * 5;
     const label = `${ft} ft`;
@@ -745,18 +1001,33 @@ cv.addEventListener('pointerdown', e => {
   }
   if (ptrs.size > 2) return;
 
+  // 1) จุดจับปรับขนาดของรูปที่เลือกอยู่
+  if (hitHandle(e.offsetX, e.offsetY)) {
+    const m = maps[selectedMap];
+    drag = { kind: 'resize', id: m.id, aspect: m.w / m.h, ow: m.w, oh: m.h, moved: false };
+    return;
+  }
+
+  // 2) โทเคน
   const hit = hitToken(e.offsetX, e.offsetY);
   if (hit) {
     selectToken(hit.id);
     if (canEdit(hit)) {
       const w = toWorld(e.offsetX, e.offsetY);
-      drag = { id: hit.id, gx: w.x / CELL - hit.x, gy: w.y / CELL - hit.y, sx: hit.x, sy: hit.y, moved: false };
+      drag = { kind: 'token', id: hit.id, gx: w.x / CELL - hit.x, gy: w.y / CELL - hit.y, sx: hit.x, sy: hit.y, moved: false };
     } else {
-      pan = { x: e.offsetX, y: e.offsetY, vx: view.x, vy: view.y };
+      pan = { x: e.offsetX, y: e.offsetY, vx: view.x, vy: view.y, moved: false };
     }
+    return;
+  }
+
+  // 3) รูป: ลากย้ายได้เฉพาะรูปที่เลือกอยู่แล้ว ไม่งั้นเป็นการเลื่อนกระดาน (แตะเฉยๆ = เลือกรูป)
+  const mh = hitMap(e.offsetX, e.offsetY);
+  if (mh && mh.id === selectedMap && canEditMap(mh)) {
+    const w = toWorld(e.offsetX, e.offsetY);
+    drag = { kind: 'map', id: mh.id, gx: w.x / CELL - mh.x, gy: w.y / CELL - mh.y, ox: mh.x, oy: mh.y, moved: false };
   } else {
-    selectToken(null);
-    pan = { x: e.offsetX, y: e.offsetY, vx: view.x, vy: view.y };
+    pan = { x: e.offsetX, y: e.offsetY, vx: view.x, vy: view.y, moved: false, tapMap: mh ? mh.id : null };
   }
 });
 
@@ -777,16 +1048,33 @@ cv.addEventListener('pointermove', e => {
     return;
   }
   if (drag) {
-    const t = tokens[drag.id];
-    if (!t) return;
     const w = toWorld(e.offsetX, e.offsetY);
-    const nx = clamp(Math.round(w.x / CELL - drag.gx), 0, GRID - t.size);
-    const ny = clamp(Math.round(w.y / CELL - drag.gy), 0, GRID - t.size);
-    if (nx !== t.x || ny !== t.y) { t.x = nx; t.y = ny; drag.moved = true; draw(); }
+    if (drag.kind === 'token') {
+      const t = tokens[drag.id];
+      if (!t) return;
+      const nx = clamp(Math.round(w.x / CELL - drag.gx), 0, GRID - t.size);
+      const ny = clamp(Math.round(w.y / CELL - drag.gy), 0, GRID - t.size);
+      if (nx !== t.x || ny !== t.y) { t.x = nx; t.y = ny; drag.moved = true; draw(); }
+    } else {
+      const m = maps[drag.id];
+      if (!m) return;
+      if (drag.kind === 'map') {
+        const nx = clamp(round2(w.x / CELL - drag.gx), -(m.w - 1), GRID - 1);
+        const ny = clamp(round2(w.y / CELL - drag.gy), -(m.h - 1), GRID - 1);
+        if (nx !== m.x || ny !== m.y) { m.x = nx; m.y = ny; drag.moved = true; draw(); }
+      } else {
+        const nw = clamp(round2(w.x / CELL - m.x), 1, 100);
+        const nh = Math.max(1, round2(nw / drag.aspect));
+        if (nw !== m.w || nh !== m.h) { m.w = nw; m.h = nh; drag.moved = true; draw(); }
+      }
+    }
   } else if (pan) {
-    view.x = pan.vx + (e.offsetX - pan.x);
-    view.y = pan.vy + (e.offsetY - pan.y);
-    draw();
+    if (!pan.moved && Math.hypot(e.offsetX - pan.x, e.offsetY - pan.y) > 5) pan.moved = true;
+    if (pan.moved) {
+      view.x = pan.vx + (e.offsetX - pan.x);
+      view.y = pan.vy + (e.offsetY - pan.y);
+      draw();
+    }
   }
 });
 
@@ -798,8 +1086,14 @@ function endPointer(e) {
     if (drag) {
       const d = drag;
       drag = null;
-      if (d.moved && tokens[d.id]) commitMove(d);
+      if (!d.moved) draw();
+      else if (d.kind === 'token' && tokens[d.id]) commitMove(d);
+      else if (d.kind !== 'token' && maps[d.id]) commitMap(d);
       else draw();
+    }
+    if (pan && !pan.moved && 'tapMap' in pan) { // แตะเฉยๆ: เลือกรูป หรือยกเลิกการเลือก
+      if (pan.tapMap) selectMap(pan.tapMap);
+      else clearSelection();
     }
     pan = null;
   }
@@ -855,18 +1149,48 @@ async function tokenDelete(id) {
 
 function selectToken(id) {
   selected = id;
+  if (id) selectedMap = null;
   updateSelBar();
   renderTokenList();
+  renderMapList();
+  draw();
+}
+function selectMap(id) {
+  selectedMap = id;
+  selected = null;
+  updateSelBar();
+  renderTokenList();
+  renderMapList();
+  draw();
+}
+function clearSelection() {
+  selected = null;
+  selectedMap = null;
+  updateSelBar();
+  renderTokenList();
+  renderMapList();
+  draw();
+}
+function centerRect(x, y, w, h) {
+  if (!W) return;
+  view.x = W / 2 - (x + w / 2) * CELL * view.s;
+  view.y = H / 2 - (y + h / 2) * CELL * view.s;
   draw();
 }
 
 function updateSelBar() {
   const t = tokens[selected];
-  $('#selBar').hidden = !t;
-  if (!t) return;
-  $('#selName').textContent = t.name || '(ไม่มีชื่อ)';
-  $('#selEdit').disabled = !canEdit(t);
-  $('#selDel').disabled = !canEdit(t);
+  const m = maps[selectedMap];
+  const obj = t || m;
+  $('#selBar').hidden = !obj;
+  if (!obj) return;
+  const ok = t ? canEdit(t) : canEditMap(m);
+  $('#selName').textContent = (m ? '🖼 ' : '') + (obj.name || '(ไม่มีชื่อ)');
+  $('#selEdit').hidden = !t;
+  $('#selFit').hidden = !m;
+  $('#selEdit').disabled = !ok;
+  $('#selFit').disabled = !ok;
+  $('#selDel').disabled = !ok;
 }
 
 function centerOn(t) {
@@ -1049,7 +1373,43 @@ function bindBoardUI() {
   $('#zoomOut').onclick = () => { zoomAt(W / 2, H / 2, 1 / 1.25); draw(); };
   $('#zoomFit').onclick = () => { fitView(); draw(); };
   $('#selEdit').onclick = () => { const t = tokens[selected]; if (t) openTokenDialog(t); };
-  $('#selDel').onclick = () => { const t = tokens[selected]; if (t && confirm(`ลบโทเคน "${t.name}" ?`)) tokenDelete(t.id); };
+  $('#selDel').onclick = () => {
+    const m = maps[selectedMap];
+    if (m) { if (confirm(`ลบรูป "${m.name}" ?`)) mapDelete(m.id); return; }
+    const t = tokens[selected];
+    if (t && confirm(`ลบโทเคน "${t.name}" ?`)) tokenDelete(t.id);
+  };
+  $('#selFit').onclick = () => {
+    const m = maps[selectedMap];
+    if (!m) return;
+    const wide = m.w >= m.h;
+    patchMap(m, {
+      x: 0, y: 0,
+      w: wide ? GRID : Math.max(1, round2((GRID * m.w) / m.h)),
+      h: wide ? Math.max(1, round2((GRID * m.h) / m.w)) : GRID,
+    });
+  };
+  $('#imgAdd').onclick = () => $('#imgFile').click();
+  $('#imgFile').onchange = async e => {
+    const f = e.target.files[0];
+    e.target.value = '';
+    await addMapFromFile(f);
+  };
+  $('#mapClear').onclick = async () => {
+    if (!confirm('ลบรูปแผนที่ทั้งหมดบนกระดาน?')) return;
+    if (online()) {
+      try {
+        await fb.D.remove(roomRef('mapimg'));
+        await fb.D.remove(roomRef('maps'));
+      } catch { toast('ไม่มีสิทธิ์'); }
+    } else {
+      maps = {};
+      Object.keys(imgs).forEach(k => delete imgs[k]);
+      selectedMap = null;
+      saveLocalMaps();
+      renderMapList(); updateSelBar(); draw();
+    }
+  };
 
   $('#tok-cancel').onclick = () => $('#tokDialog').close();
   $('#tok-del').onclick = async () => {
@@ -1103,6 +1463,8 @@ async function boot() {
   fillSelect();
   renderSheet();
   renderTokenList();
+  rebuildLocalImgs();
+  renderMapList();
   updateRoomUI();
   loadBg();
   $('#bgUrl').value = bgUrl;

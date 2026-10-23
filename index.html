@@ -107,25 +107,33 @@
     <div class="toolbar">
       <button id="tokAdd" class="primary">+ โทเคน</button>
       <button id="tokMine">ตัวฉัน</button>
+      <button id="imgAdd">🖼 รูป</button>
+      <input type="file" id="imgFile" accept="image/*" hidden>
       <button id="zoomOut" aria-label="ซูมออก">−</button>
       <button id="zoomIn" aria-label="ซูมเข้า">+</button>
       <button id="zoomFit">พอดีจอ</button>
-      <span id="selBar" class="selbar" hidden>
-        <b id="selName"></b>
-        <button id="selEdit">แก้ไข</button>
-        <button id="selDel" class="danger">ลบ</button>
-      </span>
     </div>
 
     <div class="board-wrap">
       <canvas id="board"></canvas>
+      <span id="selBar" class="selbar" hidden>
+        <b id="selName"></b>
+        <button id="selFit" hidden>เต็มกริด</button>
+        <button id="selEdit">แก้ไข</button>
+        <button id="selDel" class="danger">ลบ</button>
+      </span>
       <div class="zoom-lbl" id="zoomLbl"></div>
     </div>
-    <p class="hint">ลากโทเคนเพื่อย้าย (ขึ้นระยะทางเป็น ft) · ลากพื้นที่ว่างเพื่อเลื่อน · ล้อเมาส์/จีบสองนิ้วเพื่อซูม · ดับเบิลคลิกโทเคนเพื่อแก้ไข</p>
+    <p class="hint">ลากโทเคนเพื่อย้าย (ขึ้นระยะทางเป็น ft) · ลากพื้นที่ว่างเพื่อเลื่อน · ล้อเมาส์/จีบสองนิ้วเพื่อซูม · ดับเบิลคลิกโทเคนเพื่อแก้ไข<br>รูป: กด "🖼 รูป" เลือกจากเครื่อง · แตะรูปเพื่อเลือก แล้วลากเพื่อย้าย · ลากวงกลมมุมขวาล่างเพื่อปรับขนาด</p>
 
     <details class="card" id="tokBox" open>
       <summary>โทเคนบนกระดาน</summary>
       <div id="tokList" class="tok-list"></div>
+    </details>
+
+    <details class="card" id="mapBox" open>
+      <summary>รูปบนกระดาน</summary>
+      <div id="mapList" class="tok-list"></div>
     </details>
 
     <details class="card" id="partyBox" hidden open>
@@ -142,6 +150,7 @@
         <button id="bgSet">ตั้งพื้นหลัง</button>
         <button id="bgClear">เอาออก</button>
         <button id="tokClear" class="danger">ล้างโทเคนทั้งหมด</button>
+        <button id="mapClear" class="danger">ลบรูปทั้งหมด</button>
       </div>
     </details>
   </section>
