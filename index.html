@@ -1,0 +1,230 @@
+<!DOCTYPE html>
+<html lang="th">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+  <meta name="theme-color" content="#1b202b">
+  <title>DnD Table</title>
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link href="https://fonts.googleapis.com/css2?family=Sarabun:wght@400;600;700&display=swap" rel="stylesheet">
+  <link rel="stylesheet" href="style.css">
+</head>
+<body>
+
+<header class="topbar">
+  <div class="brand">🎲 <span>DnD Table</span></div>
+  <nav class="tabs" id="tabs">
+    <button data-tab="sheet" class="active">ตัวละคร</button>
+    <button data-tab="board">กระดาน</button>
+    <button data-tab="dice">ลูกเต๋า</button>
+  </nav>
+  <button id="roomBtn" class="room-btn">ออฟไลน์</button>
+</header>
+
+<main>
+
+  <!-- ===================== ตัวละคร ===================== -->
+  <section id="tab-sheet" class="tab active">
+    <div class="toolbar">
+      <select id="charSelect" aria-label="เลือกตัวละคร"></select>
+      <button id="charNew">+ ใหม่</button>
+      <button id="charDup">สำเนา</button>
+      <button id="charExport">ส่งออก</button>
+      <button id="charImport">นำเข้า</button>
+      <button id="charDel" class="danger">ลบ</button>
+      <input type="file" id="importFile" accept="application/json,.json" hidden>
+    </div>
+
+    <div class="card">
+      <div class="grid-2">
+        <label>ชื่อตัวละคร<input data-f="name" maxlength="40" autocomplete="off"></label>
+        <label>เผ่าพันธุ์<input data-f="race" list="raceList" maxlength="30" autocomplete="off"></label>
+        <label>อาชีพ (Class)<select data-f="cls" id="f-cls"></select></label>
+        <label>เลเวล<input data-f="level" data-t="num" type="number" min="1" max="20" inputmode="numeric"></label>
+        <label class="span2">ภูมิหลัง<input data-f="background" maxlength="40" autocomplete="off"></label>
+      </div>
+      <datalist id="raceList">
+        <option value="Human"><option value="Elf"><option value="Dwarf"><option value="Halfling">
+        <option value="Gnome"><option value="Half-Elf"><option value="Half-Orc"><option value="Tiefling"><option value="Dragonborn">
+      </datalist>
+    </div>
+
+    <div class="card">
+      <div class="card-head">
+        <h3>ค่าสถานะ</h3>
+        <div class="btn-row">
+          <button id="abRoll" title="ทอย 4d6 ตัดต่ำสุด 6 ครั้ง แล้วจัดตามอาชีพให้">🎲 สุ่ม</button>
+          <button id="abStd" title="15,14,13,12,10,8 จัดตามอาชีพให้">Standard</button>
+          <button id="abReset">รีเซ็ต</button>
+        </div>
+      </div>
+      <div id="abilities" class="abilities"></div>
+      <p class="hint">กดตัวเลขโมดิฟายเออร์เพื่อทอยเช็ค · กด "เซฟ" เพื่อทอย Saving Throw</p>
+    </div>
+
+    <div class="card">
+      <div class="card-head"><h3>การทอย</h3><div class="mode-seg" title="มีผลกับ d20 แล้วรีเซ็ตเป็นปกติหลังทอย"></div></div>
+      <div class="stats">
+        <div class="stat"><span>โบนัสชำนาญ</span><b id="pb">+2</b></div>
+        <div class="stat"><span>Initiative</span><button id="init" class="big-btn"></button></div>
+        <label class="stat"><span>AC</span><input data-f="acOverride" data-t="num" id="f-ac" type="number" inputmode="numeric"></label>
+        <label class="stat"><span>ความเร็ว (ft)</span><input data-f="speed" data-t="num" type="number" inputmode="numeric"></label>
+        <div class="stat"><span>รับรู้เชิงรับ</span><b id="passive">10</b></div>
+      </div>
+      <div class="hp">
+        <div class="hp-head">
+          <label>HP ปัจจุบัน<input data-f="hp" data-t="num" id="f-hp" type="number" inputmode="numeric"></label>
+          <label>HP สูงสุด<input data-f="hpMaxOverride" data-t="num" id="f-hpmax" type="number" inputmode="numeric"></label>
+        </div>
+        <div class="hpbar"><i id="hpfill"></i></div>
+        <div class="btn-row hp-quick">
+          <button data-hp="-5">−5</button><button data-hp="-1">−1</button>
+          <button data-hp="1">+1</button><button data-hp="5">+5</button>
+          <button id="hpFull">พักเต็ม</button>
+        </div>
+        <p class="hint">ช่อง AC / HP สูงสุด เว้นว่างไว้ = คำนวณอัตโนมัติจากสถานะและเลเวล</p>
+      </div>
+    </div>
+
+    <div class="card">
+      <div class="card-head"><h3>ทักษะ</h3></div>
+      <div id="skills" class="skills"></div>
+      <p class="hint">กดวงกลมซ้ายเพื่อสลับ ○ ไม่ถนัด / ● ชำนาญ / ◆ เชี่ยวชาญ (Expertise)</p>
+    </div>
+
+    <div class="card">
+      <div class="card-head"><h3>อาวุธ &amp; สกิลโจมตี</h3><button id="atkAdd">+ เพิ่ม</button></div>
+      <div id="attacks" class="attacks"></div>
+    </div>
+
+    <div class="card">
+      <label>โน้ต / ไอเท็ม / ประวัติ<textarea data-f="notes" rows="5"></textarea></label>
+    </div>
+  </section>
+
+  <!-- ===================== กระดาน ===================== -->
+  <section id="tab-board" class="tab">
+    <div class="toolbar">
+      <button id="tokAdd" class="primary">+ โทเคน</button>
+      <button id="tokMine">ตัวฉัน</button>
+      <button id="zoomOut" aria-label="ซูมออก">−</button>
+      <button id="zoomIn" aria-label="ซูมเข้า">+</button>
+      <button id="zoomFit">พอดีจอ</button>
+      <span id="selBar" class="selbar" hidden>
+        <b id="selName"></b>
+        <button id="selEdit">แก้ไข</button>
+        <button id="selDel" class="danger">ลบ</button>
+      </span>
+    </div>
+
+    <div class="board-wrap">
+      <canvas id="board"></canvas>
+      <div class="zoom-lbl" id="zoomLbl"></div>
+    </div>
+    <p class="hint">ลากโทเคนเพื่อย้าย (ขึ้นระยะทางเป็น ft) · ลากพื้นที่ว่างเพื่อเลื่อน · ล้อเมาส์/จีบสองนิ้วเพื่อซูม · ดับเบิลคลิกโทเคนเพื่อแก้ไข</p>
+
+    <details class="card" id="tokBox" open>
+      <summary>โทเคนบนกระดาน</summary>
+      <div id="tokList" class="tok-list"></div>
+    </details>
+
+    <details class="card" id="partyBox" hidden open>
+      <summary>ปาร์ตี้ในห้อง</summary>
+      <div id="partyList" class="party"></div>
+    </details>
+
+    <details class="card" id="dmBox">
+      <summary>ตั้งค่ากระดาน (DM)</summary>
+      <label>รูปแผนที่พื้นหลัง (URL รูป จะถูกยืดให้เต็มกริด 40×40)
+        <input id="bgUrl" placeholder="https://..." autocomplete="off">
+      </label>
+      <div class="btn-row">
+        <button id="bgSet">ตั้งพื้นหลัง</button>
+        <button id="bgClear">เอาออก</button>
+        <button id="tokClear" class="danger">ล้างโทเคนทั้งหมด</button>
+      </div>
+    </details>
+  </section>
+
+  <!-- ===================== ลูกเต๋า ===================== -->
+  <section id="tab-dice" class="tab">
+    <div class="card result" id="bigCard">
+      <div id="bigWho" class="muted">พร้อมทอย</div>
+      <div id="bigTotal">–</div>
+      <div id="bigDetail" class="muted"></div>
+    </div>
+
+    <div class="card">
+      <div class="card-head"><h3>ทอย</h3><div class="mode-seg" title="มีผลกับ d20 ตัวเดียว"></div></div>
+      <div class="steppers">
+        <div class="stepper"><span>จำนวน</span>
+          <button data-step="count" data-d="-1">−</button><b id="cntVal">1</b><button data-step="count" data-d="1">+</button>
+        </div>
+        <div class="stepper"><span>โบนัส</span>
+          <button data-step="mod" data-d="-1">−</button><b id="modVal">+0</b><button data-step="mod" data-d="1">+</button>
+        </div>
+      </div>
+      <div id="dieGrid" class="die-grid"></div>
+      <form id="exprForm" class="expr">
+        <input id="exprIn" placeholder="หรือพิมพ์สูตร เช่น 8d6+4" autocomplete="off" inputmode="text">
+        <button class="primary">ทอย</button>
+      </form>
+    </div>
+
+    <div class="card">
+      <div class="card-head"><h3>ประวัติการทอย</h3></div>
+      <ul id="logList" class="log"></ul>
+    </div>
+  </section>
+</main>
+
+<div id="toast" class="toast" hidden></div>
+
+<!-- ห้องเล่น -->
+<dialog id="roomDialog">
+  <div class="dlg">
+    <h3>ห้องเล่น</h3>
+    <p id="r-status" class="muted"></p>
+    <label>ชื่อที่แสดง<input id="r-name" maxlength="20" autocomplete="off"></label>
+    <label>รหัสห้อง<input id="r-code" maxlength="8" placeholder="เช่น K7P3Q" autocomplete="off" style="text-transform:uppercase"></label>
+    <div class="btn-row">
+      <button id="r-create">สร้างห้อง (เป็น DM)</button>
+      <button id="r-join" class="primary">เข้าห้อง</button>
+    </div>
+    <div class="btn-row">
+      <button id="r-copy">คัดลอกลิงก์ห้อง</button>
+      <button id="r-leave" class="danger">ออกจากห้อง</button>
+    </div>
+    <p id="r-err" class="err"></p>
+    <button id="r-close">ปิด</button>
+  </div>
+</dialog>
+
+<!-- โทเคน -->
+<dialog id="tokDialog">
+  <div class="dlg">
+    <h3 id="tok-title">โทเคนใหม่</h3>
+    <label>ชื่อ<input id="tok-name" maxlength="40" autocomplete="off"></label>
+    <label>ขนาด
+      <select id="tok-size">
+        <option value="1">1×1 (Medium)</option>
+        <option value="2">2×2 (Large)</option>
+        <option value="3">3×3 (Huge)</option>
+        <option value="4">4×4 (Gargantuan)</option>
+      </select>
+    </label>
+    <div>
+      <div class="muted small">สี</div>
+      <div id="swatches" class="swatches"></div>
+    </div>
+    <div class="btn-row">
+      <button id="tok-save" class="primary">บันทึก</button>
+      <button id="tok-del" class="danger">ลบ</button>
+      <button id="tok-cancel">ยกเลิก</button>
+    </div>
+  </div>
+</dialog>
+
+<script type="module" src="script.js"></script>
+</body>
+</html>
