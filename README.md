@@ -14,27 +14,6 @@
 - **ลูกเต๋า** — แตะ d4–d100 ทอยทันที ตั้งจำนวน / โบนัสได้ ได้เปรียบ–เสียเปรียบ พิมพ์สูตรเองได้ (เช่น `8d6+4`) ประวัติการทอยซิงก์ทั้งห้อง
 - **ห้องออนไลน์** — ใช้ Firebase Realtime Database + Anonymous Auth ถ้ายังไม่ตั้งค่า แอปจะทำงานแบบออฟไลน์
 
-## ตั้งค่า Firebase (ทำครั้งเดียว)
-
-1. [Firebase Console](https://console.firebase.google.com) → สร้างโปรเจกต์ (หรือใช้โปรเจกต์เดิมก็ได้)
-2. **Build → Authentication → Sign-in method** → เปิด **Anonymous**
-3. **Build → Realtime Database** → Create database
-4. แท็บ **Rules** → คัดลอกเนื้อหาไฟล์ `database.rules.json` ไปวางทั้งหมด → Publish
-   - ถ้าฐานข้อมูลนี้มีกฎของแอปอื่นอยู่แล้ว ให้เพิ่มเฉพาะก้อน `"rooms": { ... }` เข้าไปใน `"rules"` อย่าเขียนทับของเดิม
-5. **Project settings → Your apps → Web (`</>`)** → คัดลอก config มาใส่ใน `firebase-config.js` (ต้องมี `databaseURL` ด้วย)
-
-**สิทธิ์ตามกฎ:** ใครมีรหัสห้องก็อ่านห้องได้ · ผู้เล่นย้าย/แก้/ลบได้เฉพาะโทเคนและรูปของตัวเอง · DM (คนสร้างห้อง) จัดการได้ทุกอย่างและล้างทั้งกระดานได้ · ทุกคนทอยลูกเต๋าได้แต่แก้ประวัติเก่าไม่ได้ เหมาะกับกลุ่มเพื่อน ไม่ได้ออกแบบให้ทนคนประสงค์ร้าย
-
-> หลังอัปเดตแอปเป็นเวอร์ชันที่มี "รูปบนกระดาน" หรือ "หมอก" ต้อง Publish กฎใหม่ด้วย ไม่งั้นการอัปโหลดรูปจะถูกปฏิเสธ (และปุ่ม "ล้างโทเคนทั้งหมด" ของ DM จะใช้ไม่ได้)
-
-## ขึ้น GitHub Pages
-
-1. สร้าง repo แล้วอัปโหลดไฟล์ทั้งหมด (`index.html`, `style.css`, `script.js`, `dice.js`, `firebase-config.js`)
-2. **Settings → Pages** → Source: `Deploy from a branch` → `main` / `(root)`
-3. เปิด `https://<ชื่อผู้ใช้>.github.io/<ชื่อ repo>/`
-4. ถ้า Auth ฟ้อง `unauthorized-domain` → Firebase Console → Authentication → Settings → Authorized domains → เพิ่ม `<ชื่อผู้ใช้>.github.io`
-
-> `apiKey` ของ Firebase เป็นค่าสาธารณะ ใส่ใน repo ได้ ความปลอดภัยอยู่ที่ Rules
 
 ## วิธีเล่น
 
