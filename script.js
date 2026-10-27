@@ -164,7 +164,51 @@ function maxHp(c) {
   const cm = mod(c.scores.con);
   return Math.max(1, hd + cm + (c.level - 1) * Math.max(1, Math.floor(hd / 2) + 1 + cm));
 }
-const autoAc = c => 10 + mod(c.scores.dex);
+// ทักษะที่เลือกได้ตอนสร้างตัวละคร (PHB 2024) — n = จำนวนที่เลือก, from = ตัวเลือก (null = เลือกได้ทุกทักษะ)
+const CLASS_SKILLS = {
+  Barbarian: { n: 2, from: ['animal', 'athletics', 'intimidation', 'nature', 'perception', 'survival'] },
+  Bard: { n: 3, from: null },
+  Cleric: { n: 2, from: ['history', 'insight', 'medicine', 'persuasion', 'religion'] },
+  Druid: { n: 2, from: ['arcana', 'animal', 'insight', 'medicine', 'nature', 'perception', 'religion', 'survival'] },
+  Fighter: { n: 2, from: ['acrobatics', 'animal', 'athletics', 'history', 'insight', 'intimidation', 'persuasion', 'perception', 'survival'] },
+  Monk: { n: 2, from: ['acrobatics', 'athletics', 'history', 'insight', 'religion', 'stealth'] },
+  Paladin: { n: 2, from: ['athletics', 'insight', 'intimidation', 'medicine', 'persuasion', 'religion'] },
+  Ranger: { n: 3, from: ['animal', 'athletics', 'insight', 'investigation', 'nature', 'perception', 'stealth', 'survival'] },
+  Rogue: { n: 4, from: ['acrobatics', 'athletics', 'deception', 'insight', 'intimidation', 'investigation', 'perception', 'persuasion', 'sleight', 'stealth'] },
+  Sorcerer: { n: 2, from: ['arcana', 'deception', 'insight', 'intimidation', 'persuasion', 'religion'] },
+  Warlock: { n: 2, from: ['arcana', 'deception', 'history', 'intimidation', 'investigation', 'nature', 'religion'] },
+  Wizard: { n: 2, from: ['arcana', 'history', 'insight', 'investigation', 'medicine', 'nature', 'religion'] },
+};
+// การฝึกใช้เกราะของอาชีพ: l = เบา, m = กลาง, h = หนัก, s = โล่
+const ARMOR_TRAIN = {
+  Barbarian: 'lms', Bard: 'l', Cleric: 'lms', Druid: 'ls', Fighter: 'lmhs', Monk: '', Paladin: 'lmhs',
+  Ranger: 'lms', Rogue: 'l', Sorcerer: '', Warlock: 'l', Wizard: '',
+};
+// ชุดเกราะตาราง Armor ของ PHB 2024: cat = ประเภท, ac = AC ฐาน, cap = เพดานโมดิฟายเออร์ DEX (null = ไม่จำกัด, 0 = ไม่บวก DEX), str = STR ขั้นต่ำ, stealth = เสียเปรียบ Stealth
+const ARMORS = {
+  Padded: { th: 'Padded (เบา)', cat: 'l', ac: 11, cap: null, stealth: true },
+  Leather: { th: 'Leather (เบา)', cat: 'l', ac: 11, cap: null },
+  Studded: { th: 'Studded Leather (เบา)', cat: 'l', ac: 12, cap: null },
+  Hide: { th: 'Hide (กลาง)', cat: 'm', ac: 12, cap: 2 },
+  ChainShirt: { th: 'Chain Shirt (กลาง)', cat: 'm', ac: 13, cap: 2 },
+  ScaleMail: { th: 'Scale Mail (กลาง)', cat: 'm', ac: 14, cap: 2, stealth: true },
+  Breastplate: { th: 'Breastplate (กลาง)', cat: 'm', ac: 14, cap: 2 },
+  HalfPlate: { th: 'Half Plate (กลาง)', cat: 'm', ac: 15, cap: 2, stealth: true },
+  RingMail: { th: 'Ring Mail (หนัก)', cat: 'h', ac: 14, cap: 0, stealth: true },
+  ChainMail: { th: 'Chain Mail (หนัก)', cat: 'h', ac: 16, cap: 0, str: 13, stealth: true },
+  Splint: { th: 'Splint (หนัก)', cat: 'h', ac: 17, cap: 0, str: 15, stealth: true },
+  Plate: { th: 'Plate (หนัก)', cat: 'h', ac: 18, cap: 0, str: 15, stealth: true },
+};
+function autoAc(c) {
+  const dex = mod(c.scores.dex);
+  const a = ARMORS[c.armor];
+  let ac;
+  if (a) ac = a.ac + (a.cap === 0 ? 0 : a.cap == null ? dex : Math.min(dex, a.cap));
+  else if (c.cls === 'Barbarian') ac = 10 + dex + mod(c.scores.con); // Unarmored Defense
+  else if (c.cls === 'Monk' && !c.shield) ac = 10 + dex + mod(c.scores.wis);
+  else ac = 10 + dex;
+  return ac + (c.shield ? 2 : 0);
+}
 const skillBonus = (c, s) => mod(c.scores[s.ab]) + profBonus(c.level) * (c.skills[s.k] || 0);
 
 /* =====================================================================
@@ -176,6 +220,7 @@ const blankChar = () => ({
   saves: { str: true, con: true }, skills: {},
   acOverride: null, speed: 30, hpMaxOverride: null, hp: null,
   attacks: [], notes: '',
+  armor: '', shield: false,
   raceBonus: {}, bgAsi: { mode: '21', a2: '', a1: '' }, bgSkills: [],
   spellAb: '', spells: [], slotsMax: {}, slotsUsed: {},
   items: [], coins: { cp: 0, sp: 0, ep: 0, gp: 0, pp: 0 },
@@ -195,6 +240,8 @@ function normChar(o, keepId) {
     : [];
   c.bgAsi = { mode: o.bgAsi?.mode === '111' ? '111' : '21', a2: ABILITIES.some(a => a.k === o.bgAsi?.a2) ? o.bgAsi.a2 : '', a1: ABILITIES.some(a => a.k === o.bgAsi?.a1) ? o.bgAsi.a1 : '' };
   c.bgSkills = Array.isArray(o.bgSkills) ? o.bgSkills.filter(k => SKILLS.some(s => s.k === k)) : [];
+  c.armor = ARMORS[o.armor] ? o.armor : '';
+  c.shield = !!o.shield;
   c.raceBonus = {};
   ABILITIES.forEach(a => { const v = Math.round(Number(o.raceBonus?.[a.k])); if (v) c.raceBonus[a.k] = clamp(v, -5, 5); });
   const num = (v, a, b) => clamp(Number(v) || 0, a, b);
@@ -532,6 +579,11 @@ function buildSheet() {
       h('button', { class: 'sk-bonus', onclick: () => emitRoll(s.th, bonusExpr(skillBonus(cur(), s))) })));
   });
 
+  const armSel = $('#f-armor');
+  armSel.append(h('option', { value: '', text: 'ไม่สวมเกราะ' }));
+  Object.entries(ARMORS).forEach(([k, v]) => armSel.append(h('option', { value: k, text: v.th })));
+  $('#f-shield').addEventListener('change', e => { cur().shield = e.target.checked; changed(); });
+
   // เผ่า (2024): ตั้งความเร็วให้ / ภูมิหลัง: โบนัสสถานะ + ทักษะชำนาญ 2 อย่าง
   const raceSel = $('#f-race');
   raceSel.append(h('option', { value: '', text: '— เลือกเผ่า —' }));
@@ -707,6 +759,27 @@ function renderAttacks() {
 let slotEditing = false;
 let fillAsiRef = () => {};
 
+function refreshArmorSkills() {
+  const c = cur();
+  const a = ARMORS[c.armor];
+  const tr = ARMOR_TRAIN[c.cls] || '';
+  const notes = [];
+  if (a && !tr.includes(a.cat)) notes.push('⚠ อาชีพนี้ไม่ได้ฝึกเกราะประเภทนี้: เสียเปรียบเช็ค STR/DEX และร่ายเวทไม่ได้');
+  if (c.shield && !tr.includes('s')) notes.push('⚠ อาชีพนี้ไม่ได้ฝึกใช้โล่ (ไม่ได้ AC จากโล่ตามกฎ)');
+  if (a?.str && c.scores.str < a.str) notes.push(`STR ไม่ถึง ${a.str}: ความเร็วลด 10 ft`);
+  if (a?.stealth) notes.push('เสียเปรียบเช็ค Stealth');
+  if (!a && c.cls === 'Barbarian') notes.push('Unarmored Defense: 10 + DEX + CON');
+  if (!a && c.cls === 'Monk') notes.push(c.shield ? 'ถือโล่แล้วใช้ Unarmored Defense ของ Monk ไม่ได้' : 'Unarmored Defense: 10 + DEX + WIS');
+  $('#armorHint').textContent = `AC อัตโนมัติ ${autoAc(c)}${notes.length ? ' · ' + notes.join(' · ') : ''}`;
+
+  const cs = CLASS_SKILLS[c.cls];
+  const allowed = k => !cs.from || cs.from.includes(k);
+  SKILLS.forEach(s => $('#sk-' + s.k).classList.toggle('cls-ok', allowed(s.k)));
+  const chosen = SKILLS.filter(s => (c.skills[s.k] || 0) >= 1 && allowed(s.k) && !c.bgSkills.includes(s.k)).length;
+  const list = cs.from ? cs.from.map(k => SKILLS.find(s => s.k === k).th).join(', ') : 'ทักษะใดก็ได้';
+  $('#clsSkillHint').textContent = `ทักษะอาชีพ (★): เลือก ${cs.n} จาก ${list} · เลือกแล้ว ${chosen}/${cs.n}${chosen > cs.n ? ' (เกินที่กฎให้)' : ''} · ทักษะจากภูมิหลังไม่นับ`;
+}
+
 function refreshSpellStats() {
   const c = cur(), ab = spellAb(c);
   $('#spDc').textContent = ab ? 8 + profBonus(c.level) + mod(c.scores[ab]) : '–';
@@ -826,6 +899,7 @@ function renderSheet() {
   });
   $('#charSelect').value = activeId;
   fillAsiRef();
+  $('#f-shield').checked = !!c.shield;
   const bgd = BACKGROUNDS[c.background];
   const bonusTxt = Object.entries(c.raceBonus || {}).map(([k, v]) => `+${v} ${k.toUpperCase()}`).join(' ');
   $('#raceHint').textContent = bgd ? `ภูมิหลัง: ${bonusTxt} (รวมในค่าสถานะแล้ว) · ชำนาญ ${bgd.sk.map(k => SKILLS.find(s => s.k === k).th).join(', ')} · เครื่องมือ ${bgd.tool} · Feat ${bgd.feat}` : '';
@@ -851,6 +925,7 @@ function refreshDerived() {
   });
   refreshSpellStats();
   refreshLoad();
+  refreshArmorSkills();
   $('#init').textContent = fmt(mod(c.scores.dex));
   $('#passive').textContent = 10 + skillBonus(c, SKILLS.find(s => s.k === 'perception'));
 

@@ -73,6 +73,11 @@
         <label class="stat"><span>ความเร็ว (ft)</span><input data-f="speed" data-t="num" type="number" inputmode="numeric"></label>
         <div class="stat"><span>รับรู้เชิงรับ</span><b id="passive">10</b></div>
       </div>
+      <div class="grid-2 armor-row">
+        <label>ชุดเกราะ (คำนวณ AC)<select data-f="armor" id="f-armor"></select></label>
+        <label class="chk"><span>โล่ (+2 AC)</span><input type="checkbox" id="f-shield"></label>
+        <p class="hint span2" id="armorHint" style="margin:0"></p>
+      </div>
       <div class="hp">
         <div class="hp-head">
           <label>HP ปัจจุบัน<input data-f="hp" data-t="num" id="f-hp" type="number" inputmode="numeric"></label>
@@ -90,6 +95,7 @@
 
     <div class="card">
       <div class="card-head"><h3>ทักษะ</h3></div>
+      <p class="hint" id="clsSkillHint" style="margin:0 0 8px"></p>
       <div id="skills" class="skills"></div>
       <p class="hint">กดวงกลมซ้ายเพื่อสลับ ○ ไม่ถนัด / ● ชำนาญ / ◆ เชี่ยวชาญ (Expertise)</p>
     </div>
