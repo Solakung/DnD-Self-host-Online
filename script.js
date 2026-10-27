@@ -506,6 +506,7 @@ function resetSceneState() {
   tokens = {}; selected = null;
   maps = {}; selectedMap = null;
   draws = {}; draft = null; tdrag = null; ruler = null;
+  undoStack = []; redoStack = [];
   fog = '';
   if (tool === 'fog') setTool('move');
   Object.keys(imgs).forEach(k => delete imgs[k]);
@@ -1185,7 +1186,13 @@ const CONDS = [
   ['restrained', '🔗', 'Restrained'], ['stunned', '💫', 'Stunned'], ['unconscious', '💤', 'Unconscious'], ['concentrating', '🧠', 'Concentrating'],
 ];
 const condInfo = k => CONDS.find(c => c[0] === k);
-const DRAW_TYPES = ['pen', 'text', 'circle', 'cone', 'line', 'cube'];
+const BUILD_TYPES = ['room', 'wall', 'door', 'icon'];
+const DRAW_TYPES = ['pen', 'text', 'circle', 'cone', 'line', 'cube', ...BUILD_TYPES];
+const FLOORS = ['#cbbd9a', '#a7a196', '#8a6f4e', '#7f9a6b', '#6f93ad', '#4a4752'];
+const WALLC = '#241a10';
+const ICONS = [['table', 'โต๊ะ'], ['chair', 'เก้าอี้'], ['bed', 'เตียง'], ['chest', 'หีบ'], ['stairs', 'บันได'], ['pillar', 'เสา'], ['tree', 'ต้นไม้'], ['rock', 'หิน'], ['barrel', 'ถัง'], ['fire', 'กองไฟ'], ['altar', 'แท่นบูชา'], ['trap', 'กับดัก'], ['well', 'บ่อน้ำ']];
+let buildMode = 'room', iconKind = 'table', iconRot = 0, floorColor = FLOORS[0];
+let undoStack = [], redoStack = [];
 
 // ฉาก: 'main' = ฉากหลัก (เก็บที่เดิมเพื่อให้ห้องเก่ายังใช้ได้) ฉากอื่นเก็บใต้ sdata/<id>/
 let scene = 'main';
@@ -1611,6 +1618,57 @@ function drawText(d) {
   ctx.strokeText(d.s, d.x * CELL, d.y * CELL);
   ctx.fillStyle = d.c; ctx.fillText(d.s, d.x * CELL, d.y * CELL);
 }
+const rectOf = d => ({ x: Math.min(d.pts[0], d.pts[2]), y: Math.min(d.pts[1], d.pts[3]), w: Math.abs(d.pts[2] - d.pts[0]), h: Math.abs(d.pts[3] - d.pts[1]) });
+// ห้อง: วาดขอบกำแพงของทุกห้องก่อน แล้วถมพื้นทับ → ห้องที่ชนกันรวมเป็นพื้นที่เดียวไม่มีกำแพงคั่น
+function drawRoomsLayer(list) {
+  const rooms = list.filter(d => d.t === 'room' && d.pts.length >= 4);
+  if (!rooms.length) return;
+  ctx.lineJoin = 'miter';
+  [['#8a7a62', 14], [WALLC, 9]].forEach(([col, w]) => {
+    ctx.strokeStyle = col; ctx.lineWidth = w;
+    rooms.forEach(d => { const r = rectOf(d); ctx.strokeRect(r.x * CELL, r.y * CELL, r.w * CELL, r.h * CELL); });
+  });
+  rooms.forEach(d => { const r = rectOf(d); ctx.fillStyle = d.c; ctx.fillRect(r.x * CELL, r.y * CELL, r.w * CELL, r.h * CELL); });
+}
+function drawWall(d) {
+  const p = d.pts;
+  if (p.length < 4) return;
+  ctx.beginPath(); ctx.moveTo(p[0] * CELL, p[1] * CELL); ctx.lineTo(p[2] * CELL, p[3] * CELL);
+  ctx.lineCap = 'square'; ctx.lineWidth = 13; ctx.strokeStyle = '#8a7a62'; ctx.stroke();
+  ctx.lineWidth = 8; ctx.strokeStyle = d.c || WALLC; ctx.stroke(); ctx.lineCap = 'butt';
+}
+function drawDoor(d) {
+  ctx.save(); ctx.translate(d.x * CELL, d.y * CELL); ctx.rotate(d.a);
+  const w = CELL * 0.8, h = CELL * 0.27;
+  ctx.fillStyle = '#9a6a3a'; ctx.strokeStyle = '#2a1a0c'; ctx.lineWidth = 2.5;
+  ctx.fillRect(-w / 2, -h / 2, w, h); ctx.strokeRect(-w / 2, -h / 2, w, h);
+  ctx.beginPath(); ctx.moveTo(-w / 2 + 3, 0); ctx.lineTo(w / 2 - 3, 0); ctx.lineWidth = 1.5; ctx.stroke();
+  ctx.restore();
+}
+function drawIcon(d) {
+  ctx.save(); ctx.translate(d.x * CELL, d.y * CELL); ctx.rotate(d.a); ctx.scale(CELL, CELL);
+  ctx.lineWidth = 0.05; ctx.lineJoin = 'round'; ctx.strokeStyle = '#241a10';
+  const R = (x, y, w, h, f) => { ctx.fillStyle = f; ctx.beginPath(); ctx.rect(x, y, w, h); ctx.fill(); ctx.stroke(); };
+  const C = (x, y, r, f) => { ctx.fillStyle = f; ctx.beginPath(); ctx.arc(x, y, r, 0, Math.PI * 2); ctx.fill(); ctx.stroke(); };
+  const L = (x1, y1, x2, y2) => { ctx.beginPath(); ctx.moveTo(x1, y1); ctx.lineTo(x2, y2); ctx.stroke(); };
+  switch (d.s) {
+    case 'table': R(-0.4, -0.25, 0.8, 0.5, '#8a5a2b'); break;
+    case 'chair': R(-0.18, -0.16, 0.36, 0.36, '#a8743a'); R(-0.18, -0.28, 0.36, 0.12, '#6e4721'); break;
+    case 'bed': R(-0.25, -0.42, 0.5, 0.84, '#8c3a3a'); R(-0.2, -0.38, 0.4, 0.2, '#f1ecde'); break;
+    case 'chest': R(-0.35, -0.22, 0.7, 0.44, '#7a4a20'); L(-0.35, -0.04, 0.35, -0.04); R(-0.06, -0.1, 0.12, 0.12, '#e0b457'); break;
+    case 'stairs': R(-0.4, -0.45, 0.8, 0.9, '#b9b2a3'); for (let i = 1; i < 6; i++) L(-0.4, -0.45 + i * 0.15, 0.4, -0.45 + i * 0.15); L(0, 0.3, 0, -0.3); L(0, -0.3, -0.1, -0.18); L(0, -0.3, 0.1, -0.18); break;
+    case 'pillar': C(0, 0, 0.3, '#b4b4b4'); C(0, 0, 0.15, '#d6d6d6'); break;
+    case 'tree': C(0, 0, 0.44, '#3f7d3a'); C(-0.12, -0.1, 0.2, '#4f9a49'); C(0.15, 0.12, 0.17, '#356f31'); break;
+    case 'rock': ctx.fillStyle = '#8d8d8d'; ctx.beginPath(); [[-0.35, 0.1], [-0.2, -0.3], [0.15, -0.35], [0.38, -0.05], [0.25, 0.3], [-0.15, 0.35]].forEach(([x, y], i) => (i ? ctx.lineTo(x, y) : ctx.moveTo(x, y))); ctx.closePath(); ctx.fill(); ctx.stroke(); break;
+    case 'barrel': C(0, 0, 0.32, '#8a5a2b'); C(0, 0, 0.2, '#a8743a'); break;
+    case 'fire': L(-0.3, 0.25, 0.3, -0.25); L(-0.3, -0.25, 0.3, 0.25); C(0, 0, 0.28, '#e8742a'); C(0, 0, 0.16, '#f4c542'); break;
+    case 'altar': R(-0.4, -0.25, 0.8, 0.5, '#9a9aa8'); C(0, 0, 0.1, '#c9453a'); break;
+    case 'trap': C(0, 0, 0.32, '#7a2a2a'); ctx.strokeStyle = '#f0d0d0'; L(-0.17, -0.17, 0.17, 0.17); L(0.17, -0.17, -0.17, 0.17); break;
+    case 'well': C(0, 0, 0.38, '#7d7568'); C(0, 0, 0.24, '#3c78a8'); break;
+    default: C(0, 0, 0.3, '#888');
+  }
+  ctx.restore();
+}
 function segDist(px, py, ax, ay, bx, by) {
   const dx = bx - ax, dy = by - ay;
   const l2 = dx * dx + dy * dy;
@@ -1624,6 +1682,15 @@ function hitDrawAt(cx, cy) {
     if (d.t === 'pen') {
       for (let i = 0; i + 3 < d.pts.length; i += 2) if (segDist(cx, cy, d.pts[i], d.pts[i + 1], d.pts[i + 2], d.pts[i + 3]) < 0.35) return d;
       if (d.pts.length === 2 && Math.hypot(cx - d.pts[0], cy - d.pts[1]) < 0.35) return d;
+    } else if (d.t === 'room') {
+      if (d.pts.length < 4) continue;
+      const r = rectOf(d);
+      const e = [[r.x, r.y, r.x + r.w, r.y], [r.x + r.w, r.y, r.x + r.w, r.y + r.h], [r.x + r.w, r.y + r.h, r.x, r.y + r.h], [r.x, r.y + r.h, r.x, r.y]];
+      if (e.some(q => segDist(cx, cy, ...q) < 0.4)) return d;
+    } else if (d.t === 'wall') {
+      if (d.pts.length >= 4 && segDist(cx, cy, d.pts[0], d.pts[1], d.pts[2], d.pts[3]) < 0.35) return d;
+    } else if (d.t === 'door' || d.t === 'icon') {
+      if (Math.hypot(cx - d.x, cy - d.y) < 0.5) return d;
     } else if (d.t === 'text') {
       if (Math.abs(cx - d.x) <= Math.max(0.5, d.s.length * 0.22) && Math.abs(cy - d.y) <= 0.35) return d;
     } else if (inTemplate(d, cx, cy)) return d;
@@ -1667,6 +1734,9 @@ function draw() {
       ctx.fillRect(m.x * CELL, m.y * CELL, m.w * CELL, m.h * CELL);
     }
   });
+
+  // ห้อง (พื้น+กำแพงนอก) อยู่ใต้กริด
+  drawRoomsLayer(draft?.t === 'room' ? [...drawList(), draft] : drawList());
 
   // เส้นกริด (วาดเฉพาะส่วนที่มองเห็น)
   const x0 = clamp(Math.floor(-view.x / view.s / CELL), 0, GRID);
@@ -1714,6 +1784,10 @@ function draw() {
 
   // เส้นวาด (ชั้นล่างโทเคน)
   const dl = drawList();
+  dl.forEach(d => { if (d.t === 'wall') drawWall(d); });
+  if (draft?.t === 'wall') drawWall(draft);
+  dl.forEach(d => { if (d.t === 'door') drawDoor(d); });
+  dl.forEach(d => { if (d.t === 'icon') drawIcon(d); });
   dl.forEach(d => { if (d.t === 'pen') drawPen(d); });
   if (draft?.t === 'pen') drawPen(draft);
 
@@ -1805,8 +1879,8 @@ function draw() {
   });
 
   // เทมเพลต + ข้อความ (ชั้นบนโทเคน)
-  dl.forEach(d => { if (d.t === 'text') drawText(d); else if (d.t !== 'pen') drawTemplate(d); });
-  if (draft && draft.t !== 'pen') drawTemplate(draft);
+  dl.forEach(d => { if (d.t === 'text') drawText(d); else if (d.t !== 'pen' && !BUILD_TYPES.includes(d.t)) drawTemplate(d); });
+  if (draft && draft.t !== 'pen' && !BUILD_TYPES.includes(draft.t)) drawTemplate(draft);
 
   // หมอก (DM เห็นเป็นโปร่ง ผู้เล่นทึบ)
   if (fog.length === GRID * GRID) {
@@ -1922,7 +1996,7 @@ function fogUI() {
 
 /* --- เครื่องมือบนกระดาน --- */
 function setTool(name) {
-  if (name === 'fog' && !iAmDM()) name = 'move';
+  if ((name === 'fog' || name === 'build') && !iAmDM()) name = 'move';
   tool = name;
   ruler = null; draft = null; tdrag = null; fogLast = null;
   $$('#toolbar2 button').forEach(b => b.classList.toggle('on', b.dataset.tool === name));
@@ -1939,14 +2013,19 @@ function swatchRow() {
     onclick: () => { drawColor = c; buildToolOpts(); },
   })));
 }
+function undoRow() {
+  return h('span', { class: 'undo' },
+    h('button', { type: 'button', title: 'ย้อนกลับ', 'aria-label': 'ย้อนกลับ', text: '↶', onclick: undoDraw }),
+    h('button', { type: 'button', title: 'ทำซ้ำ', 'aria-label': 'ทำซ้ำ', text: '↷', onclick: redoDraw }));
+}
 function buildToolOpts() {
   const box = $('#toolOpts');
   box.innerHTML = '';
-  const show = ['pen', 'text', 'tpl', 'erase'].includes(tool);
+  const show = ['pen', 'text', 'tpl', 'erase', 'build'].includes(tool);
   box.hidden = !show;
   if (!show) return;
   if (tool === 'pen') {
-    box.append(h('b', { text: '✏️' }), swatchRow(), h('button', { text: 'ลบเส้นของฉัน', onclick: () => clearMyDraws(['pen']) }));
+    box.append(h('b', { text: '✏️' }), swatchRow(), h('button', { text: 'ลบเส้นของฉัน', onclick: () => clearMyDraws(['pen']) }), undoRow());
   } else if (tool === 'text') {
     box.append(h('b', { text: '🔤' }), swatchRow(), h('span', { class: 'muted small', text: 'แตะบนกระดานเพื่อวางข้อความ' }));
   } else if (tool === 'tpl') {
@@ -1955,9 +2034,26 @@ function buildToolOpts() {
         .map(([v, l]) => h('option', { value: v, text: l, selected: v === tplKind })));
     const sz = h('select', { 'aria-label': 'ขนาด', onchange: e => { tplSize = Number(e.target.value); } },
       ...[5, 10, 15, 20, 30, 40, 60, 90, 120].map(n => h('option', { value: n, text: `${n} ft`, selected: n === tplSize })));
-    box.append(shape, sz, swatchRow(), h('button', { text: 'ลบของฉัน', onclick: () => clearMyDraws(['circle', 'cone', 'line', 'cube']) }));
+    box.append(shape, sz, swatchRow(), h('button', { text: 'ลบของฉัน', onclick: () => clearMyDraws(['circle', 'cone', 'line', 'cube']) }), undoRow());
+  } else if (tool === 'build') {
+    const modes = [['room', '▭ ห้อง'], ['wall', '▬ กำแพง'], ['door', '🚪 ประตู'], ['icon', '🪑 ไอคอน']];
+    box.append(h('span', { class: 'modes' }, ...modes.map(([v, l]) => h('button', { type: 'button', class: buildMode === v ? 'on' : '', text: l, onclick: () => { buildMode = v; buildToolOpts(); } }))));
+    if (buildMode === 'room') {
+      box.append(h('span', { class: 'swatches' }, ...FLOORS.map(c => h('button', { type: 'button', class: 'sw' + (c === floorColor ? ' on' : ''), style: `background:${c}`, 'aria-label': c, onclick: () => { floorColor = c; buildToolOpts(); } }))),
+        h('span', { class: 'muted small', text: 'ลากเป็นสี่เหลี่ยม · ห้องที่ติดกันจะรวมเป็นพื้นที่เดียว' }));
+    } else if (buildMode === 'wall') {
+      box.append(h('span', { class: 'muted small', text: 'ลากเส้นกำแพงตามจุดตัดกริด' }));
+    } else if (buildMode === 'door') {
+      box.append(h('span', { class: 'muted small', text: 'แตะที่ขอบช่อง = วางประตู · แตะซ้ำ = เอาออก' }));
+    } else {
+      const sel = h('select', { 'aria-label': 'ไอคอน', onchange: e => { iconKind = e.target.value; } },
+        ...ICONS.map(([v, l]) => h('option', { value: v, text: l, selected: v === iconKind })));
+      box.append(sel, h('button', { text: '⟳ หมุน', onclick: e => { iconRot = (iconRot + Math.PI / 2) % (Math.PI * 2); e.target.textContent = `⟳ ${Math.round(iconRot * 180 / Math.PI)}°`; } }),
+        h('span', { class: 'muted small', text: 'แตะช่องเพื่อวาง' }));
+    }
+    box.append(undoRow());
   } else if (tool === 'erase') {
-    box.append(h('b', { text: '🧽' }), h('span', { class: 'muted small', text: 'แตะหรือลากทับเส้น/ข้อความ/เทมเพลต' }),
+    box.append(h('b', { text: '🧽' }), h('span', { class: 'muted small', text: 'แตะหรือลากทับเส้น/ข้อความ/เทมเพลต/ของในแมพ (ห้อง: แตะที่ขอบ)' }),
       h('button', { class: 'danger', text: iAmDM() ? 'ลบทั้งหมด' : 'ลบของฉันทั้งหมด', onclick: () => clearMyDraws(DRAW_TYPES) }));
   }
 }
@@ -2012,6 +2108,23 @@ function toolDown(e) {
     draw();
     return;
   }
+  if (tool === 'build') {
+    if (buildMode === 'room' || buildMode === 'wall') {
+      const q = rulerPt(px, py);
+      tdrag = { k: 'build', a: q };
+      draft = { t: buildMode, c: buildMode === 'room' ? floorColor : WALLC, pts: [q.x, q.y, q.x, q.y] };
+      draw();
+    } else if (buildMode === 'door') {
+      const rx = Math.round(cx), ry = Math.round(cy);
+      const vert = Math.abs(cx - rx) < Math.abs(cy - ry);
+      const dx = vert ? rx : Math.floor(cx) + 0.5, dy = vert ? Math.floor(cy) + 0.5 : ry;
+      const ex = drawList().find(d => d.t === 'door' && Math.abs(d.x - dx) < 0.01 && Math.abs(d.y - dy) < 0.01);
+      if (ex) { if (canDelDraw(ex)) drawDelete(ex.id); } else drawPut({ t: 'door', c: '#9a6a3a', x: dx, y: dy, a: vert ? r2(Math.PI / 2) : 0 });
+    } else {
+      drawPut({ t: 'icon', c: '#888888', x: clamp(Math.floor(cx), 0, GRID - 1) + 0.5, y: clamp(Math.floor(cy), 0, GRID - 1) + 0.5, a: r2(iconRot), s: iconKind });
+    }
+    return;
+  }
   if (tool === 'erase') { tdrag = { k: 'erase' }; eraseAt(cx, cy); return; }
   if (tool === 'ping') {
     const p = { x: r2(cx), y: r2(cy), c: drawColor, n: room.name || '', from: online() ? room.uid : 'local', ts: Date.now(), k: Math.random() };
@@ -2033,6 +2146,7 @@ function toolMove(e) {
     if (p.length < 800 && Math.hypot(cx - p[p.length - 2], cy - p[p.length - 1]) > 0.15) { p.push(r2(cx), r2(cy)); draw(); }
     return;
   }
+  if (tdrag.k === 'build') { const q = rulerPt(px, py); draft.pts = [tdrag.a.x, tdrag.a.y, q.x, q.y]; draw(); return; }
   if (tdrag.k === 'text') { if (Math.hypot(px - tdrag.x, py - tdrag.y) > 8) { tdrag.cx = snap5(cx); tdrag.cy = snap5(cy); } return; }
   if (tdrag.k === 'tpl') {
     if (tplKind === 'cone' || tplKind === 'line') {
@@ -2059,6 +2173,14 @@ function toolUp() {
     drawPut({ t: 'pen', c: drawColor, p: p.join(';') });
     return;
   }
+  if (d.k === 'build' && draft) {
+    const t = draft, q = t.pts;
+    draft = null;
+    const ok = t.t === 'room' ? q[0] !== q[2] && q[1] !== q[3] : q[0] !== q[2] || q[1] !== q[3];
+    if (ok) drawPut({ t: t.t, c: t.c, p: `${q[0]},${q[1]};${q[2]},${q[3]}` });
+    else draw();
+    return;
+  }
   if (d.k === 'text') {
     const s = (prompt('ข้อความที่จะวางบนกระดาน') || '').trim().slice(0, 80);
     if (s) drawPut({ t: 'text', c: drawColor, x: d.cx, y: d.cy, s });
@@ -2081,10 +2203,11 @@ function eraseAt(cx, cy) {
 
 /* --- จัดการเส้นวาด --- */
 function saveLocalDraws() { if (!online()) store.set(lk('draw'), draws); }
-async function drawPut(d) {
-  const id = uid8();
+async function drawPut(d, forceId, noUndo) {
+  const id = forceId || uid8();
   const data = { t: d.t, c: d.c, o: myId(), ts: Date.now() };
   ['x', 'y', 'r', 'a', 's', 'p'].forEach(k => { if (d[k] != null) data[k] = d[k]; });
+  if (!noUndo) { undoStack.push({ id, data }); if (undoStack.length > 60) undoStack.shift(); redoStack = []; }
   if (online()) {
     try { await fb.D.set(sref(`draw/${id}`), data); } catch { toast('วาดไม่สำเร็จ (ไม่มีสิทธิ์หรือเน็ตหลุด)'); }
   } else {
@@ -2092,6 +2215,19 @@ async function drawPut(d) {
     saveLocalDraws();
     draw();
   }
+}
+function undoDraw() {
+  while (undoStack.length) {
+    const e = undoStack.pop();
+    if (draws[e.id]) { redoStack.push(e); drawDelete(e.id); return; }
+  }
+  toast('ไม่มีอะไรให้ย้อน', 1500);
+}
+function redoDraw() {
+  const e = redoStack.pop();
+  if (!e) { toast('ไม่มีอะไรให้ทำซ้ำ', 1500); return; }
+  undoStack.push(e);
+  drawPut(e.data, e.id, true);
 }
 async function drawDelete(id) {
   if (!draws[id]) return;
@@ -2735,6 +2871,8 @@ function updateRoomUI() {
   b.textContent = online() ? `ห้อง ${room.code} · ${room.isDM ? 'DM' : 'ผู้เล่น'}` : 'ออฟไลน์';
   $('#dmBox').hidden = !iAmDM();
   $('#fogBtn').hidden = !iAmDM();
+  $('#buildBtn').hidden = !iAmDM();
+  if (!iAmDM() && tool === 'build') setTool('move');
   if (!iAmDM()) fogStop();
   $('#r-leave').hidden = !online();
   $('#r-copy').hidden = !online();
