@@ -824,6 +824,10 @@ function buildSheet() {
     document.body.append(a); a.click(); a.remove();
     setTimeout(() => URL.revokeObjectURL(a.href), 1000);
   };
+  $('#charExportAll').onclick = () => {
+    downloadJson(chars, `dndtable-characters-${chars.length}.json`);
+    toast(`ส่งออก ${chars.length} ตัวละครแล้ว (นำเข้าด้วยปุ่ม "นำเข้า" ได้เลย)`);
+  };
   $('#charImport').onclick = () => $('#importFile').click();
   $('#importFile').onchange = async e => {
     const f = e.target.files[0];
@@ -2809,6 +2813,116 @@ function renderScenes() {
   $('#sceneDel').disabled = scene === 'main';
   $('#sceneRename').disabled = scene === 'main';
 }
+
+/* =====================================================================
+   สำรอง / นำเข้า (ไฟล์เดียว เก็บทุกฉากพร้อมรูป) — นำเข้าแล้วได้เป็นฉากใหม่ ไม่ทับของเดิม
+   ===================================================================== */
+function downloadJson(obj, filename) {
+  const blob = new Blob([JSON.stringify(obj)], { type: 'application/json' });
+  const a = h('a', { href: URL.createObjectURL(blob), download: filename });
+  document.body.append(a); a.click(); a.remove();
+  setTimeout(() => URL.revokeObjectURL(a.href), 1500);
+}
+async function readSceneRaw(sid) {
+  const names = ['tokens', 'tokimg', 'maps', 'mapimg', 'fog', 'draw'];
+  if (online()) {
+    const P = n => (sid === 'main' ? n : `sdata/${sid}/${n}`);
+    const vals = await Promise.all(names.map(async n => (await fb.D.get(roomRef(P(n)))).val()));
+    return Object.fromEntries(names.map((n, i) => [n, vals[i]]));
+  }
+  const K = n => (sid === 'main' ? n : `${n}@${sid}`);
+  return Object.fromEntries(names.map(n => [n, store.get(K(n), n === 'fog' ? '' : {})]));
+}
+async function exportRoomBackup() {
+  if (!iAmDM()) return;
+  toast('กำลังรวบรวมข้อมูล...', 6000);
+  try {
+    const sc = online() ? room.scenes : scenes;
+    const list = [['main', { name: 'ฉากหลัก' }], ...Object.entries(sc || {})];
+    const out = [];
+    for (const [sid, meta] of list) {
+      const raw = await readSceneRaw(sid);
+      const toks = Object.entries(raw.tokens || {}).map(([id, t]) => {
+        const n = normToken({ ...t, imgSrc: raw.tokimg?.[id] ?? t?.imgSrc }, id);
+        return { ...tokenData(n), id, imgSrc: n.imgSrc };
+      });
+      const mps = Object.entries(raw.maps || {}).map(([id, m]) => {
+        const n = normMap({ ...m, src: raw.mapimg?.[id] ?? m?.src }, id);
+        return { id, name: n.name, x: n.x, y: n.y, w: n.w, h: n.h, created: n.created, src: n.src };
+      });
+      const drs = Object.entries(raw.draw || {}).map(([id, d]) => {
+        const n = normDraw(d, id);
+        return { id, t: n.t, c: n.c, ts: n.ts, x: n.x, y: n.y, r: n.r, a: n.a, s: n.s, p: n.p };
+      });
+      out.push({ name: String(meta?.name || 'ฉาก'), tokens: toks, maps: mps, draw: drs, fog: typeof raw.fog === 'string' ? raw.fog : '' });
+    }
+    const d = new Date();
+    downloadJson({ app: 'dndtable', v: 1, kind: 'room', exported: d.toISOString(), scenes: out },
+      `dndtable-backup-${d.getFullYear()}${String(d.getMonth() + 1).padStart(2, '0')}${String(d.getDate()).padStart(2, '0')}.json`);
+    toast(`สำรอง ${out.length} ฉากแล้ว`);
+  } catch (e) { toast('สำรองไม่สำเร็จ: ' + (e.message || 'เน็ตหลุด')); }
+}
+async function importRoomBackup(file) {
+  if (!iAmDM() || !file) return;
+  let data;
+  try { data = JSON.parse(await file.text()); } catch { toast('ไฟล์ไม่ถูกต้อง'); return; }
+  if (data?.app !== 'dndtable' || data.kind !== 'room' || !Array.isArray(data.scenes) || !data.scenes.length) { toast('ไม่ใช่ไฟล์สำรองของแอปนี้'); return; }
+  const sceneArr = data.scenes.slice(0, 30);
+  if (!confirm(`นำเข้า ${sceneArr.length} ฉากเป็น "ฉากใหม่" (ไม่ทับของเดิม)?`)) return;
+  const me = myId();
+  let ok = 0;
+  for (const sc of sceneArr) {
+    const sid = uid8();
+    const name = (String(sc?.name || 'ฉาก').slice(0, 20) + ' (นำเข้า)').slice(0, 30);
+    const tokensO = {}, tokimgO = {}, mapsO = {}, mapimgO = {}, drawO = {};
+    (sc.tokens || []).slice(0, 300).forEach(t => {
+      const id = String(t?.id || uid8()).slice(0, 12);
+      const n = normToken({ ...t, owner: me, img: !!t?.imgSrc }, id);
+      n.owner = me;
+      tokensO[id] = tokenData(n);
+      if (n.imgSrc && n.imgSrc.length < 60000) tokimgO[id] = n.imgSrc; else delete tokensO[id].img;
+    });
+    (sc.maps || []).slice(0, 60).forEach(m => {
+      const id = String(m?.id || uid8()).slice(0, 12);
+      const n = normMap(m, id);
+      mapsO[id] = { name: n.name, x: n.x, y: n.y, w: n.w, h: n.h, owner: me, created: n.created || Date.now() };
+      if (n.src && n.src.length < 1000000) mapimgO[id] = n.src;
+    });
+    (sc.draw || []).slice(0, 1500).forEach(d => {
+      const id = String(d?.id || uid8()).slice(0, 12);
+      const n = normDraw(d, id);
+      const o = { t: n.t, c: n.c, o: me, ts: n.ts || Date.now() };
+      ['x', 'y', 'r', 'a', 's', 'p'].forEach(k => { if (d?.[k] != null && d[k] !== '') o[k] = n[k]; });
+      drawO[id] = o;
+    });
+    const fogV = typeof sc.fog === 'string' && sc.fog.length === GRID * GRID && /^[01]+$/.test(sc.fog) ? sc.fog : '';
+    try {
+      if (online()) {
+        const upd = {};
+        Object.entries(tokensO).forEach(([k, v]) => { upd[`tokens/${k}`] = v; });
+        Object.entries(tokimgO).forEach(([k, v]) => { upd[`tokimg/${k}`] = v; });
+        Object.entries(mapsO).forEach(([k, v]) => { upd[`maps/${k}`] = v; });
+        Object.entries(mapimgO).forEach(([k, v]) => { upd[`mapimg/${k}`] = v; });
+        Object.entries(drawO).forEach(([k, v]) => { upd[`draw/${k}`] = v; });
+        if (fogV) upd.fog = fogV;
+        if (Object.keys(upd).length) await fb.D.update(roomRef(`sdata/${sid}`), upd);
+        await fb.D.update(roomRef('meta'), { [`scenes/${sid}`]: { name, ts: Date.now() } });
+      } else {
+        const sv = (k, v) => { if (!store.set(`${k}@${sid}`, v)) throw new Error('พื้นที่เก็บเต็ม'); };
+        sv('tokens', Object.fromEntries(Object.entries(tokensO).map(([k, v]) => [k, { ...v, id: k, size: v.size, hp: v.hp, hpMax: v.hpMax, conds: v.conds ? v.conds.split(',') : [], imgSrc: tokimgO[k] }])));
+        sv('maps', Object.fromEntries(Object.entries(mapsO).map(([k, v]) => [k, { ...v, id: k, src: mapimgO[k] }])));
+        sv('draw', drawO);
+        if (fogV) sv('fog', fogV);
+        scenes[sid] = { name, ts: Date.now() };
+        store.set('scenes', scenes);
+      }
+      ok++;
+    } catch (e) { toast(`นำเข้า "${name}" ไม่สำเร็จ: ${e.message || 'ไม่มีสิทธิ์/เน็ตหลุด'}`); }
+  }
+  renderScenes();
+  if (ok) toast(`นำเข้าแล้ว ${ok} ฉาก — เลือกจากรายการฉาก`, 4500);
+}
+
 async function sceneSelect(id) {
   if (!iAmDM() || id === scene) return;
   if (online()) {
@@ -3119,6 +3233,9 @@ function bindBoardUI() {
 
   // ฉาก / อินิเชียทีฟ
   $('#sceneAdd').onclick = sceneAdd;
+  $('#bkExport').onclick = exportRoomBackup;
+  $('#bkImport').onclick = () => $('#bkFile').click();
+  $('#bkFile').onchange = e => { const f = e.target.files[0]; e.target.value = ''; importRoomBackup(f); };
   $('#sceneRename').onclick = sceneRename;
   $('#sceneDel').onclick = sceneDelete;
   $('#sceneSel').onchange = e => sceneSelect(e.target.value);

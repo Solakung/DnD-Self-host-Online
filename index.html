@@ -30,6 +30,7 @@
       <button id="charNew">+ ใหม่</button>
       <button id="charDup">สำเนา</button>
       <button id="charExport">ส่งออก</button>
+      <button id="charExportAll" title="สำรองตัวละครทั้งหมดเป็นไฟล์เดียว">ส่งออกทั้งหมด</button>
       <button id="charImport">นำเข้า</button>
       <button id="charDel" class="danger">ลบ</button>
       <input type="file" id="importFile" accept="application/json,.json" hidden>
@@ -232,6 +233,9 @@
       <div class="card-head sub"><h3>ฉาก (Scene)</h3></div>
       <div id="sceneList" class="tok-list"></div>
       <div class="btn-row"><button id="sceneAdd">+ ฉากใหม่</button><button id="sceneRename">เปลี่ยนชื่อ</button><button id="sceneDel" class="danger">ลบฉากนี้</button></div>
+      <div class="btn-row"><button id="bkExport">💾 สำรองทุกฉาก</button><button id="bkImport">📂 นำเข้า</button></div>
+      <input type="file" id="bkFile" accept="application/json,.json" hidden>
+      <p class="hint">สำรอง = ไฟล์เดียวเก็บทุกฉากพร้อมรูป โทเคน หมอก เส้นวาด · นำเข้า = ได้เป็นฉากใหม่ ไม่ทับของเดิม (โทเคนที่นำเข้าจะเป็นของ DM)</p>
       <p class="hint">ผู้เล่นจะตามไปยังฉากที่ DM เลือก แต่ละฉากมีโทเคน รูป หมอก และเส้นวาดของตัวเอง</p>
       <label>รูปแผนที่พื้นหลัง (URL รูป จะถูกยืดให้เต็มกริด 40×40)
         <input id="bgUrl" placeholder="https://..." autocomplete="off">
