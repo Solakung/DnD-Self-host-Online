@@ -28,6 +28,7 @@ const store = {
     try { localStorage.setItem('dndtable.' + k, JSON.stringify(v)); return true; } catch { return false; }
   },
 };
+store.del = k => { try { localStorage.removeItem('dndtable.' + k); } catch { /* ignore */ } };
 const uid8 = () => Math.random().toString(36).slice(2, 10);
 const clamp = (v, a, b) => Math.min(b, Math.max(a, v));
 const fmt = n => (n >= 0 ? '+' : '−') + Math.abs(n);
@@ -158,11 +159,14 @@ function loadOf(c) {
 const mod = s => Math.floor((s - 10) / 2);
 const profBonus = lvl => Math.ceil(lvl / 4) + 1;
 
+const hasFeat = (c, f) => (c.feats || []).includes(f) || BACKGROUNDS[c.background]?.feat === f;
+const initBonus = c => mod(c.scores.dex) + (hasFeat(c, 'Alert') ? profBonus(c.level) : 0);
+
 function maxHp(c) {
   if (c.hpMaxOverride != null) return c.hpMaxOverride;
   const hd = CLASSES[c.cls].hd;
   const cm = mod(c.scores.con);
-  return Math.max(1, hd + cm + (c.level - 1) * Math.max(1, Math.floor(hd / 2) + 1 + cm));
+  return Math.max(1, hd + cm + (c.level - 1) * Math.max(1, Math.floor(hd / 2) + 1 + cm)) + (hasFeat(c, 'Tough') ? 2 * c.level : 0);
 }
 // ทักษะที่เลือกได้ตอนสร้างตัวละคร (PHB 2024) — n = จำนวนที่เลือก, from = ตัวเลือก (null = เลือกได้ทุกทักษะ)
 const CLASS_SKILLS = {
@@ -207,9 +211,69 @@ function autoAc(c) {
   else if (c.cls === 'Barbarian') ac = 10 + dex + mod(c.scores.con); // Unarmored Defense
   else if (c.cls === 'Monk' && !c.shield) ac = 10 + dex + mod(c.scores.wis);
   else ac = 10 + dex;
-  return ac + (c.shield ? 2 : 0);
+  return ac + (c.shield ? 2 : 0) + (a && c.feats.includes('Defense') ? 1 : 0);
 }
 const skillBonus = (c, s) => mod(c.scores[s.ab]) + profBonus(c.level) * (c.skills[s.k] || 0);
+
+
+/* ===== PHB 2024: อาวุธ + Weapon Mastery + Feat (เฉพาะชื่อ/ตัวเลข) ===== */
+// [ชื่อ, ดาเมจ, ประเภท(S/P/B), คุณสมบัติ, Mastery, หมวด]  หมวด: sm=Simple Melee, sr=Simple Ranged, mm=Martial Melee, mr=Martial Ranged
+const WEAPONS = [
+  ['Club','1d4','B','Light','Slow','sm'],['Dagger','1d4','P','Finesse,Light,Thrown','Nick','sm'],
+  ['Greatclub','1d8','B','Two-Handed','Push','sm'],['Handaxe','1d6','S','Light,Thrown','Vex','sm'],
+  ['Javelin','1d6','P','Thrown','Slow','sm'],['Light Hammer','1d4','B','Light,Thrown','Nick','sm'],
+  ['Mace','1d6','B','','Sap','sm'],['Quarterstaff','1d6','B','Versatile 1d8','Topple','sm'],
+  ['Sickle','1d4','S','Light','Nick','sm'],['Spear','1d6','P','Thrown,Versatile 1d8','Sap','sm'],
+  ['Dart','1d4','P','Finesse,Thrown','Vex','sr'],['Light Crossbow','1d8','P','Ammunition,Loading,Two-Handed','Slow','sr'],
+  ['Shortbow','1d6','P','Ammunition,Two-Handed','Vex','sr'],['Sling','1d4','B','Ammunition','Slow','sr'],
+  ['Battleaxe','1d8','S','Versatile 1d10','Topple','mm'],['Flail','1d8','B','','Sap','mm'],
+  ['Glaive','1d10','S','Heavy,Reach,Two-Handed','Graze','mm'],['Greataxe','1d12','S','Heavy,Two-Handed','Cleave','mm'],
+  ['Greatsword','2d6','S','Heavy,Two-Handed','Graze','mm'],['Halberd','1d10','S','Heavy,Reach,Two-Handed','Cleave','mm'],
+  ['Lance','1d10','P','Heavy,Reach','Topple','mm'],['Longsword','1d8','S','Versatile 1d10','Sap','mm'],
+  ['Maul','2d6','B','Heavy,Two-Handed','Topple','mm'],['Morningstar','1d8','P','','Sap','mm'],
+  ['Pike','1d10','P','Heavy,Reach,Two-Handed','Push','mm'],['Rapier','1d8','P','Finesse','Vex','mm'],
+  ['Scimitar','1d6','S','Finesse,Light','Nick','mm'],['Shortsword','1d6','P','Finesse,Light','Vex','mm'],
+  ['Trident','1d8','P','Thrown,Versatile 1d10','Topple','mm'],['Warhammer','1d8','B','Versatile 1d10','Push','mm'],
+  ['War Pick','1d8','P','Versatile 1d10','Sap','mm'],['Whip','1d4','S','Finesse,Reach','Slow','mm'],
+  ['Blowgun','1','P','Ammunition,Loading','Vex','mr'],['Hand Crossbow','1d6','P','Ammunition,Light,Loading','Vex','mr'],
+  ['Heavy Crossbow','1d10','P','Ammunition,Heavy,Loading,Two-Handed','Push','mr'],['Longbow','1d8','P','Ammunition,Heavy,Two-Handed','Slow','mr'],
+  ['Musket','1d12','P','Ammunition,Loading,Two-Handed','Slow','mr'],['Pistol','1d10','P','Ammunition,Loading','Vex','mr'],
+].map(([name, die, type, props, mastery, cat]) => ({ name, die, type, props, mastery, cat, ranged: cat === 'sr' || cat === 'mr' }));
+const WEAPON_BY = Object.fromEntries(WEAPONS.map(w => [w.name, w]));
+const WCAT = { sm: 'Simple Melee', sr: 'Simple Ranged', mm: 'Martial Melee', mr: 'Martial Ranged' };
+const MARTIAL_CLS = ['Barbarian', 'Fighter', 'Paladin', 'Ranger'];
+function weaponProf(c, w) {
+  if (w.cat === 'sm' || w.cat === 'sr') return true;
+  if (MARTIAL_CLS.includes(c.cls)) return true;
+  const p = w.props;
+  if (c.cls === 'Monk') return !w.ranged && /Light/.test(p);
+  if (c.cls === 'Rogue') return !w.ranged && /Light|Finesse/.test(p);
+  return false;
+}
+function weaponCalc(c, w) {
+  const finesse = /Finesse/.test(w.props);
+  const m = w.ranged ? mod(c.scores.dex) : finesse ? Math.max(mod(c.scores.str), mod(c.scores.dex)) : mod(c.scores.str);
+  const prof = weaponProf(c, w);
+  const bonus = m + (prof ? profBonus(c.level) : 0);
+  const dmg = w.die + (m ? (m > 0 ? '+' : '-') + Math.abs(m) : '');
+  return { bonus, dmg, prof };
+}
+const FEATS = {
+  origin: ['Alert', 'Crafter', 'Healer', 'Lucky', 'Magic Initiate', 'Musician', 'Savage Attacker', 'Skilled', 'Tavern Brawler', 'Tough'],
+  general: ['Ability Score Improvement', 'Actor', 'Athlete', 'Charger', 'Chef', 'Crossbow Expert', 'Crusher', 'Defensive Duelist', 'Dual Wielder', 'Durable', 'Elemental Adept', 'Fey-Touched', 'Grappler', 'Great Weapon Master', 'Heavily Armored', 'Heavy Armor Master', 'Inspiring Leader', 'Keen Mind', 'Lightly Armored', 'Mage Slayer', 'Martial Weapon Training', 'Medium Armor Master', 'Moderately Armored', 'Mounted Combatant', 'Observant', 'Piercer', 'Poisoner', 'Polearm Master', 'Resilient', 'Ritual Caster', 'Sentinel', 'Shadow-Touched', 'Sharpshooter', 'Shield Master', 'Skill Expert', 'Skulker', 'Slasher', 'Speedster', 'Spell Sniper', 'Telekinetic', 'Telepathic', 'War Caster'],
+  style: ['Archery', 'Blessed Warrior', 'Blind Fighting', 'Defense', 'Druidic Warrior', 'Dueling', 'Great Weapon Fighting', 'Interception', 'Protection', 'Thrown Weapon Fighting', 'Two-Weapon Fighting', 'Unarmed Fighting'],
+  epic: ['Boon of Combat Prowess', 'Boon of Dimensional Travel', 'Boon of Fate', 'Boon of Fortitude', 'Boon of Irresistible Offense', 'Boon of Energy Resistance', 'Boon of Recovery', 'Boon of Skill', 'Boon of Speed', 'Boon of Spell Recall', 'Boon of the Night Spirit', 'Boon of Truesight'],
+};
+const FEAT_CAT = { origin: 'Origin (เลเวล 1)', general: 'General (เลเวล 4+)', style: 'Fighting Style', epic: 'Epic Boon (เลเวล 19+)' };
+const FEAT_ALL = new Set(Object.values(FEATS).flat());
+const FEAT_NOTE = {
+  'Tough': 'HP สูงสุด +2 ต่อเลเวล (นับให้อัตโนมัติ)',
+  'Ability Score Improvement': '+2 ค่าสถานะหนึ่งอย่าง หรือ +1 สองอย่าง (แก้ค่าเอง)',
+  'Alert': 'Initiative + โบนัสชำนาญ (นับให้ใน Initiative)',
+  'Archery': 'โจมตีไกล +2 (นับให้ในตารางอาวุธ)',
+  'Dueling': 'ถืออาวุธมือเดียว ดาเมจ +2 (นับให้ในตารางอาวุธ)',
+  'Defense': 'ใส่เกราะ AC +1 (นับให้อัตโนมัติ)',
+};
 
 /* =====================================================================
    ตัวละคร (เก็บใน localStorage)
@@ -224,6 +288,7 @@ const blankChar = () => ({
   raceBonus: {}, bgAsi: { mode: '21', a2: '', a1: '' }, bgSkills: [],
   spellAb: '', spells: [], slotsMax: {}, slotsUsed: {},
   items: [], coins: { cp: 0, sp: 0, ep: 0, gp: 0, pp: 0 },
+  feats: [],
 });
 
 function normChar(o, keepId) {
@@ -236,10 +301,11 @@ function normChar(o, keepId) {
   c.saves = o.saves && typeof o.saves === 'object' ? o.saves : b.saves;
   c.skills = o.skills && typeof o.skills === 'object' ? o.skills : {};
   c.attacks = Array.isArray(o.attacks)
-    ? o.attacks.slice(0, 30).map(a => ({ id: uid8(), name: String(a.name || ''), bonus: Number(a.bonus) || 0, dmg: String(a.dmg || '') }))
+    ? o.attacks.slice(0, 30).map(a => ({ id: uid8(), name: String(a.name || ''), bonus: Number(a.bonus) || 0, dmg: String(a.dmg || ''), w: WEAPON_BY[a.w] ? a.w : '' }))
     : [];
   c.bgAsi = { mode: o.bgAsi?.mode === '111' ? '111' : '21', a2: ABILITIES.some(a => a.k === o.bgAsi?.a2) ? o.bgAsi.a2 : '', a1: ABILITIES.some(a => a.k === o.bgAsi?.a1) ? o.bgAsi.a1 : '' };
   c.bgSkills = Array.isArray(o.bgSkills) ? o.bgSkills.filter(k => SKILLS.some(s => s.k === k)) : [];
+  c.feats = Array.isArray(o.feats) ? [...new Set(o.feats.filter(f => FEAT_ALL.has(f)))].slice(0, 20) : [];
   c.armor = ARMORS[o.armor] ? o.armor : '';
   c.shield = !!o.shield;
   c.raceBonus = {};
@@ -275,7 +341,7 @@ const charLabel = c => `${c.name || 'ไม่มีชื่อ'} (${CLASSES[c.
    ห้อง / Firebase
    ===================================================================== */
 const configured = !/PASTE|YOUR-/.test(`${firebaseConfig.apiKey}${firebaseConfig.databaseURL}`);
-const room = { code: null, uid: null, isDM: false, name: store.get('name', ''), unsubs: [] };
+const room = { code: null, uid: null, isDM: false, name: store.get('name', ''), unsubs: [], dm: null, scenes: {}, sceneUnsubs: [] };
 let fb = null; // { D, db, uid }
 let party = {};
 
@@ -312,57 +378,34 @@ async function enterRoom(code, create) {
   } else if (!snap.exists()) {
     throw new Error('ไม่พบห้องนี้ ตรวจรหัสอีกครั้ง');
   }
+  const m0 = snap.val() || {};
 
   leaveRoom(true);
+  unsubscribeScene();
   room.code = code;
   room.uid = uid;
-  tokens = {};
-  selected = null;
-  maps = {};
-  selectedMap = null;
-  fog = ''; fogStop();
-  Object.keys(imgs).forEach(k => delete imgs[k]);
+  room.dm = m0.dm || null;
+  room.scenes = m0.scenes && typeof m0.scenes === 'object' ? m0.scenes : {};
+  scene = m0.scene && (m0.scene === 'main' || room.scenes[m0.scene]) ? m0.scene : 'main';
+  resetSceneState();
+  initState = normInit({});
+  remoteRulers = {};
+  pings = [];
   $('#logList').innerHTML = '';
 
   const u = room.unsubs;
   u.push(D.onValue(roomRef('meta'), s => {
     const m = s.val() || {};
     room.isDM = m.dm === uid;
+    room.dm = m.dm || null;
+    room.scenes = m.scenes && typeof m.scenes === 'object' ? m.scenes : {};
     bgUrl = typeof m.bg === 'string' ? m.bg : '';
     loadBg();
+    const want = m.scene && (m.scene === 'main' || room.scenes[m.scene]) ? m.scene : 'main';
+    if (want !== scene) switchScene(want);
     updateRoomUI();
+    renderScenes();
   }));
-
-  u.push(D.onValue(roomRef('fog'), s => {
-    const v = s.val();
-    if (!fogMode) { fog = typeof v === 'string' && v.length === GRID * GRID ? v : ''; draw(); }
-  }));
-
-  const tref = roomRef('tokens');
-  const put = s => { tokens[s.key] = normToken(s.val(), s.key); renderTokenList(); updateSelBar(); draw(); };
-  u.push(D.onChildAdded(tref, put));
-  u.push(D.onChildChanged(tref, put));
-  u.push(D.onChildRemoved(tref, s => {
-    delete tokens[s.key];
-    if (selected === s.key) selected = null;
-    renderTokenList(); updateSelBar(); draw();
-  }));
-
-  const mref = roomRef('maps');
-  const putMap = s => { maps[s.key] = normMap(s.val(), s.key); renderMapList(); updateSelBar(); draw(); };
-  u.push(D.onChildAdded(mref, putMap));
-  u.push(D.onChildChanged(mref, putMap));
-  u.push(D.onChildRemoved(mref, s => {
-    delete maps[s.key];
-    delete imgs[s.key];
-    if (selectedMap === s.key) selectedMap = null;
-    renderMapList(); updateSelBar(); draw();
-  }));
-  const iref = roomRef('mapimg');
-  const putImg = s => loadImg(s.key, s.val());
-  u.push(D.onChildAdded(iref, putImg));
-  u.push(D.onChildChanged(iref, putImg));
-  u.push(D.onChildRemoved(iref, s => { delete imgs[s.key]; draw(); }));
 
   u.push(D.onChildAdded(D.query(roomRef('rolls'), D.limitToLast(40)), s => {
     const r = s.val();
@@ -373,38 +416,147 @@ async function enterRoom(code, create) {
 
   u.push(D.onValue(roomRef('chars'), s => { party = s.val() || {}; renderParty(); }));
 
+  u.push(D.onValue(roomRef('init'), s => {
+    const prev = initState.turn;
+    initState = normInit(s.val() || {});
+    renderInit(); draw();
+    if (initState.turn && initState.turn !== prev) announceTurn();
+  }));
+
+  let firstPing = true;
+  u.push(D.onValue(roomRef('ping'), s => {
+    const p = s.val();
+    if (firstPing) { firstPing = false; return; }
+    if (p && p.from !== uid && Number.isFinite(Number(p.x)) && Number.isFinite(Number(p.y))) addPing(p);
+  }));
+
+  u.push(D.onValue(roomRef('rulers'), s => {
+    remoteRulers = s.val() || {};
+    delete remoteRulers[uid];
+    draw();
+  }));
+
   u.push(D.onValue(D.ref(db, '.info/connected'), s => {
     if (!s.val() || !room.code) return;
-    const mine = roomRef(`chars/${uid}`);
-    D.onDisconnect(mine).remove();
+    D.onDisconnect(roomRef(`chars/${uid}`)).remove();
+    D.onDisconnect(roomRef(`rulers/${uid}`)).remove();
     syncMyChar();
   }));
 
+  subscribeScene();
   store.set('room', code);
   updateRoomUI();
+  renderScenes(); renderTokenList(); renderMapList(); renderInit(); updateSelBar(); draw();
+}
+
+/* ฟังข้อมูลของฉากปัจจุบัน (โทเคน รูป หมอก เส้นวาด) */
+function subscribeScene() {
+  const { D } = fb;
+  const u = room.sceneUnsubs = [];
+
+  u.push(D.onValue(sref('fog'), s => {
+    const v = s.val();
+    if (!(tool === 'fog' && fogDirty)) { fog = typeof v === 'string' && v.length === GRID * GRID ? v : ''; draw(); }
+  }));
+
+  const tref = sref('tokens');
+  const put = s => { tokens[s.key] = normToken(s.val(), s.key); renderTokenList(); updateSelBar(); draw(); };
+  u.push(D.onChildAdded(tref, put));
+  u.push(D.onChildChanged(tref, put));
+  u.push(D.onChildRemoved(tref, s => {
+    delete tokens[s.key];
+    delete tokImgs[s.key];
+    if (selected === s.key) selected = null;
+    renderTokenList(); updateSelBar(); draw();
+  }));
+  const tiref = sref('tokimg');
+  const putTi = s => loadTokImg(s.key, s.val());
+  u.push(D.onChildAdded(tiref, putTi));
+  u.push(D.onChildChanged(tiref, putTi));
+  u.push(D.onChildRemoved(tiref, s => { delete tokImgs[s.key]; draw(); }));
+
+  const mref = sref('maps');
+  const putMap = s => { maps[s.key] = normMap(s.val(), s.key); renderMapList(); updateSelBar(); draw(); };
+  u.push(D.onChildAdded(mref, putMap));
+  u.push(D.onChildChanged(mref, putMap));
+  u.push(D.onChildRemoved(mref, s => {
+    delete maps[s.key];
+    delete imgs[s.key];
+    if (selectedMap === s.key) selectedMap = null;
+    renderMapList(); updateSelBar(); draw();
+  }));
+  const iref = sref('mapimg');
+  const putImg = s => loadImg(s.key, s.val());
+  u.push(D.onChildAdded(iref, putImg));
+  u.push(D.onChildChanged(iref, putImg));
+  u.push(D.onChildRemoved(iref, s => { delete imgs[s.key]; draw(); }));
+
+  const dref = sref('draw');
+  const putDraw = s => { draws[s.key] = normDraw(s.val(), s.key); draw(); };
+  u.push(D.onChildAdded(dref, putDraw));
+  u.push(D.onChildChanged(dref, putDraw));
+  u.push(D.onChildRemoved(dref, s => { delete draws[s.key]; draw(); }));
+}
+function unsubscribeScene() {
+  (room.sceneUnsubs || []).forEach(f => { try { f(); } catch { /* ignore */ } });
+  room.sceneUnsubs = [];
+}
+
+function resetSceneState() {
+  tokens = {}; selected = null;
+  maps = {}; selectedMap = null;
+  draws = {}; draft = null; tdrag = null; ruler = null;
+  fog = '';
+  if (tool === 'fog') setTool('move');
+  Object.keys(imgs).forEach(k => delete imgs[k]);
+  Object.keys(tokImgs).forEach(k => delete tokImgs[k]);
+}
+
+function loadLocalScene() {
+  tokens = loadLocalTokens();
+  maps = loadLocalMaps();
+  fog = store.get(lk('fog'), '');
+  if (typeof fog !== 'string' || (fog && fog.length !== GRID * GRID)) fog = '';
+  draws = loadLocalDraws();
+  rebuildLocalImgs();
+  Object.values(tokens).forEach(t => { if (t.imgSrc) loadTokImg(t.id, t.imgSrc); });
+}
+
+function switchScene(id) {
+  if (id === scene) return;
+  unsubscribeScene();
+  scene = id;
+  resetSceneState();
+  if (online()) subscribeScene(); else loadLocalScene();
+  renderScenes(); renderTokenList(); renderMapList(); updateSelBar(); renderInit(); draw();
+  toast(`ฉาก: ${sceneName(id)}`, 2500);
 }
 
 function leaveRoom(silent) {
   if (fb && room.code && !silent) {
     fb.D.remove(roomRef(`chars/${room.uid}`)).catch(() => {});
+    fb.D.remove(roomRef(`rulers/${room.uid}`)).catch(() => {});
   }
   room.unsubs.forEach(f => { try { f(); } catch { /* ignore */ } });
   room.unsubs = [];
+  unsubscribeScene();
   room.code = null;
   room.isDM = false;
+  room.dm = null;
+  room.scenes = {};
   party = {};
+  remoteRulers = {};
   if (!silent) {
     store.set('room', null);
-    tokens = store.get('tokens', {});
-    selected = null;
-    maps = loadLocalMaps();
-    selectedMap = null;
-    rebuildLocalImgs();
+    const sv = store.get('scene', 'main');
+    scene = sv === 'main' || scenes[sv] ? sv : 'main';
+    resetSceneState();
+    loadLocalScene();
+    initState = loadLocalInit();
     bgUrl = store.get('bg', '');
-    fog = store.get('fog', ''); fogStop();
     loadBg();
     $('#logList').innerHTML = '';
-    renderTokenList(); renderMapList(); renderParty(); updateSelBar(); updateRoomUI(); draw();
+    renderTokenList(); renderMapList(); renderParty(); updateSelBar(); updateRoomUI(); renderScenes(); renderInit(); draw();
   }
 }
 
@@ -420,6 +572,7 @@ function syncMyChar() {
     hp: c.hp ?? mh,
     maxHp: mh,
     ac: c.acOverride ?? autoAc(c),
+    init: initBonus(c),
   }).catch(() => {});
 }
 
@@ -530,7 +683,7 @@ function changed() {
   if (opt) opt.textContent = charLabel(cur());
   refreshDerived();
   clearTimeout(saveT);
-  saveT = setTimeout(syncMyChar, 400);
+  saveT = setTimeout(() => { syncMyChar(); pushCharToTokens(); }, 400);
 }
 
 function fillSelect() {
@@ -703,7 +856,7 @@ function buildSheet() {
   $('#abReset').onclick = () => { ABILITIES.forEach(a => { cur().scores[a.k] = 10 + (cur().raceBonus[a.k] || 0); }); renderSheet(); changed(); };
 
   // Initiative / HP
-  $('#init').onclick = () => emitRoll('Initiative', bonusExpr(mod(cur().scores.dex)));
+  $('#init').onclick = () => emitRoll('Initiative', bonusExpr(initBonus(cur())));
   $$('[data-hp]').forEach(b => b.addEventListener('click', () => {
     const c = cur();
     const mh = maxHp(c);
@@ -732,6 +885,8 @@ function buildSheet() {
     h('input', { type: 'number', min: 0, inputmode: 'numeric', 'data-coin': k, oninput: e => { cur().coins[k] = Math.max(0, Math.round(Number(e.target.value) || 0)); changed(); } }))));
 
   // อาวุธ
+  bindFeats();
+  $('#atkRecalc').onclick = () => { recalcWeapons(); changed(); };
   $('#atkAdd').onclick = () => {
     const c = cur();
     const m = mod(c.scores.str);
@@ -740,20 +895,94 @@ function buildSheet() {
   };
 }
 
+function styleBonus(c, w) {
+  let b = 0, d = 0;
+  if (c.feats.includes('Archery') && w.ranged) b += 2;
+  if (c.feats.includes('Dueling') && !w.ranged && !/Two-Handed/.test(w.props)) d += 2;
+  return { b, d };
+}
+function applyWeapon(c, a) {
+  const w = WEAPON_BY[a.w];
+  if (!w) return;
+  const r = weaponCalc(c, w), s = styleBonus(c, w);
+  a.bonus = r.bonus + s.b;
+  a.dmg = r.dmg + (s.d ? `+${s.d}` : '');
+  if (!a.name) a.name = w.name;
+}
 function renderAttacks() {
   const box = $('#attacks');
   box.innerHTML = '';
   const c = cur();
   c.attacks.forEach(a => {
+    const sel = h('select', { class: 'wsel', title: 'เลือกอาวุธ PHB 2024 (คำนวณโบนัส/ดาเมจให้)' },
+      h('option', { value: '', text: '— อาวุธเอง —' }),
+      ...Object.entries(WCAT).map(([k, t]) => h('optgroup', { label: t }, ...WEAPONS.filter(w => w.cat === k).map(w => h('option', { value: w.name, text: `${w.name} (${w.die})` })))));
+    sel.value = a.w || '';
+    const w = WEAPON_BY[a.w];
+    const info = h('div', { class: 'hint winfo', style: w ? '' : 'display:none' });
+    const showInfo = () => {
+      const ww = WEAPON_BY[a.w];
+      if (!ww) { info.style.display = 'none'; return; }
+      info.style.display = '';
+      info.textContent = `${ww.die} ${ww.type === 'S' ? 'Slashing' : ww.type === 'P' ? 'Piercing' : 'Bludgeoning'}${ww.props ? ' · ' + ww.props.replace(/,/g, ', ') : ''} · Mastery: ${ww.mastery}${weaponProf(c, ww) ? '' : ' · ⚠ ไม่ชำนาญ'}`;
+    };
+    showInfo();
+    const nm = h('input', { placeholder: 'ชื่ออาวุธ/สกิล', value: a.name, oninput: e => { a.name = e.target.value; changed(); } });
+    const bn = h('input', { type: 'number', class: 'sm', title: 'โบนัสโจมตี', value: a.bonus, inputmode: 'numeric', oninput: e => { a.bonus = Number(e.target.value) || 0; changed(); } });
+    const dm = h('input', { class: 'sm', placeholder: 'ดาเมจ เช่น 1d8+3', value: a.dmg, oninput: e => { a.dmg = e.target.value; changed(); } });
+    sel.onchange = () => {
+      a.w = sel.value;
+      if (a.w) { if (!a.name || WEAPON_BY[a.name]) a.name = ''; applyWeapon(c, a); nm.value = a.name; bn.value = a.bonus; dm.value = a.dmg; }
+      showInfo(); changed();
+    };
     box.append(h('div', { class: 'atk' },
-      h('input', { placeholder: 'ชื่ออาวุธ/สกิล', value: a.name, oninput: e => { a.name = e.target.value; changed(); } }),
-      h('input', { type: 'number', class: 'sm', title: 'โบนัสโจมตี', value: a.bonus, inputmode: 'numeric', oninput: e => { a.bonus = Number(e.target.value) || 0; changed(); } }),
-      h('input', { class: 'sm', placeholder: 'ดาเมจ เช่น 1d8+3', value: a.dmg, oninput: e => { a.dmg = e.target.value; changed(); } }),
+      sel, h('span'), h('span'),
+      nm, bn, dm, info,
       h('div', { class: 'atk-btns' },
         h('button', { text: '⚔ โจมตี', onclick: () => emitRoll(`${a.name || 'โจมตี'} (โจมตี)`, bonusExpr(a.bonus)) }),
         h('button', { text: '💥 ดาเมจ', onclick: () => emitRoll(`${a.name || 'ดาเมจ'} (ดาเมจ)`, a.dmg || '1d4') }),
         h('button', { class: 'danger', text: '✕', 'aria-label': 'ลบ', onclick: () => { c.attacks = c.attacks.filter(x => x !== a); renderAttacks(); changed(); } }))));
   });
+}
+function recalcWeapons() {
+  const c = cur();
+  c.attacks.forEach(a => { if (a.w) applyWeapon(c, a); });
+  renderAttacks();
+}
+
+function featList(c) {
+  const bg = BACKGROUNDS[c.background];
+  const out = [];
+  if (bg) out.push({ name: bg.feat, from: 'ภูมิหลัง' });
+  c.feats.forEach(f => out.push({ name: f, from: '', own: true }));
+  return out;
+}
+function renderFeats() {
+  const c = cur();
+  const box = $('#featList');
+  if (!box) return;
+  box.innerHTML = '';
+  const list = featList(c);
+  if (!list.length) box.append(h('p', { class: 'hint', text: 'ยังไม่มี Feat — เลือกภูมิหลังเพื่อรับ Origin Feat หรือเพิ่มเอง' }));
+  list.forEach(f => {
+    const base = f.name.replace(/ \(.*\)$/, '');
+    const cat = Object.keys(FEATS).find(k => FEATS[k].includes(base));
+    box.append(h('div', { class: 'feat' },
+      h('div', {}, h('b', { text: f.name }), h('span', { class: 'hint', text: ` ${cat ? FEAT_CAT[cat] : ''}${f.from ? ' · จาก' + f.from : ''}` }),
+        FEAT_NOTE[base] ? h('div', { class: 'hint', text: FEAT_NOTE[base] }) : null),
+      f.own ? h('button', { class: 'danger', text: '✕', 'aria-label': 'ลบ', onclick: () => { c.feats = c.feats.filter(x => x !== f.name); renderFeats(); recalcWeapons(); refreshDerived(); changed(); } }) : null));
+  });
+}
+function bindFeats() {
+  const sel = $('#featSel');
+  sel.append(h('option', { value: '', text: '— เลือก Feat —' }),
+    ...Object.entries(FEATS).map(([k, arr]) => h('optgroup', { label: FEAT_CAT[k] }, ...arr.map(f => h('option', { value: f, text: f })))));
+  $('#featAdd').onclick = () => {
+    const c = cur(), f = sel.value;
+    if (!f || c.feats.includes(f)) return;
+    c.feats.push(f); sel.value = '';
+    renderFeats(); recalcWeapons(); refreshDerived(); changed();
+  };
 }
 
 let slotEditing = false;
@@ -904,6 +1133,7 @@ function renderSheet() {
   const bonusTxt = Object.entries(c.raceBonus || {}).map(([k, v]) => `+${v} ${k.toUpperCase()}`).join(' ');
   $('#raceHint').textContent = bgd ? `ภูมิหลัง: ${bonusTxt} (รวมในค่าสถานะแล้ว) · ชำนาญ ${bgd.sk.map(k => SKILLS.find(s => s.k === k).th).join(', ')} · เครื่องมือ ${bgd.tool} · Feat ${bgd.feat}` : '';
   renderAttacks();
+  renderFeats();
   renderSpells();
   renderInventory();
   refreshDerived();
@@ -926,7 +1156,7 @@ function refreshDerived() {
   refreshSpellStats();
   refreshLoad();
   refreshArmorSkills();
-  $('#init').textContent = fmt(mod(c.scores.dex));
+  $('#init').textContent = fmt(initBonus(c));
   $('#passive').textContent = 10 + skillBonus(c, SKILLS.find(s => s.k === 'perception'));
 
   const mh = maxHp(c);
@@ -947,15 +1177,37 @@ const GRID = 40;
 const COLORS = ['#e5534b', '#e0b457', '#6cc070', '#4ea1ff', '#a371f7', '#f0883e', '#39c5cf', '#d2d6dc'];
 const colorFor = id => COLORS[[...String(id)].reduce((a, ch) => a + ch.charCodeAt(0), 0) % COLORS.length];
 
-let tokens = store.get('tokens', {});
+// สถานะ (Condition) ตามกฎ 2024 + Concentrating
+const CONDS = [
+  ['blinded', '🙈', 'Blinded'], ['charmed', '💘', 'Charmed'], ['deafened', '🔇', 'Deafened'], ['exhaustion', '😴', 'Exhaustion'],
+  ['frightened', '😱', 'Frightened'], ['grappled', '🤼', 'Grappled'], ['incapacitated', '🚫', 'Incapacitated'], ['invisible', '👻', 'Invisible'],
+  ['paralyzed', '⚡', 'Paralyzed'], ['petrified', '🗿', 'Petrified'], ['poisoned', '☠️', 'Poisoned'], ['prone', '🛌', 'Prone'],
+  ['restrained', '🔗', 'Restrained'], ['stunned', '💫', 'Stunned'], ['unconscious', '💤', 'Unconscious'], ['concentrating', '🧠', 'Concentrating'],
+];
+const condInfo = k => CONDS.find(c => c[0] === k);
+const DRAW_TYPES = ['pen', 'text', 'circle', 'cone', 'line', 'cube'];
+
+// ฉาก: 'main' = ฉากหลัก (เก็บที่เดิมเพื่อให้ห้องเก่ายังใช้ได้) ฉากอื่นเก็บใต้ sdata/<id>/
+let scene = 'main';
+let scenes = store.get('scenes', {}); // ออฟไลน์: id -> { name, ts }
+{ const sv = store.get('scene', 'main'); scene = sv === 'main' || scenes[sv] ? sv : 'main'; }
+const sp = name => (scene === 'main' ? name : `sdata/${scene}/${name}`);
+const sref = name => roomRef(sp(name));
+const lk = name => (scene === 'main' ? name : `${name}@${scene}`);
+const sceneName = id => (id === 'main' ? 'ฉากหลัก' : String((online() ? room.scenes : scenes)[id]?.name || 'ฉาก'));
+
+let tokens = loadLocalTokens();
 let selected = null;
 let maps = loadLocalMaps();
 let selectedMap = null;
+let draws = loadLocalDraws();
 const imgs = {}; // id -> HTMLImageElement ที่โหลดเสร็จแล้ว
+const tokImgs = {}; // id -> รูปโทเคน
 let bgUrl = store.get('bg', '');
 let bgImg = null;
-let fog = store.get('fog', ''); // สตริงยาว 1600 ตัว '1' = ช่องที่ถูกหมอกปิด (ว่าง = ไม่ใช้หมอก)
-let fogMode = null, fogBrush = 1, fogLast = null, fogDirty = false;
+let fog = store.get(lk('fog'), ''); // สตริงยาว 1600 ตัว '1' = ช่องที่ถูกหมอกปิด (ว่าง = ไม่ใช้หมอก)
+if (typeof fog !== 'string' || (fog && fog.length !== GRID * GRID)) fog = '';
+let fogMode = 'reveal', fogBrush = 1, fogLast = null, fogDirty = false;
 const fogHidden = (x, y) => fog.length === GRID * GRID && fog[y * GRID + x] === '1';
 const view = { s: 1, x: 0, y: 0 };
 let W = 0;
@@ -967,11 +1219,25 @@ let pan = null;
 let pinch = null;
 const ptrs = new Map();
 
+// เครื่องมือบนกระดาน
+let tool = 'move'; // move | ruler | pen | text | tpl | erase | ping | fog
+let drawColor = COLORS[1];
+let tplKind = 'circle';
+let tplSize = 20;
+let tdrag = null; // การลากของเครื่องมือที่กำลังทำอยู่
+let draft = null; // เส้น/เทมเพลตที่กำลังวาด (ยังไม่บันทึก)
+let ruler = null;
+let remoteRulers = {};
+let pings = [];
+let initState = loadLocalInit();
+
 const cv = $('#board');
 const ctx = cv.getContext('2d');
 
 function normToken(t, id) {
   const size = clamp(Math.round(Number(t?.size)) || 1, 1, 4);
+  const iv = (v, a, b) => (v == null || v === '' || !Number.isFinite(Number(v)) ? null : clamp(Math.round(Number(v)), a, b));
+  const cs = (Array.isArray(t?.conds) ? t.conds : String(t?.conds || '').split(',')).filter(k => condInfo(k));
   return {
     id,
     name: String(t?.name ?? '').slice(0, 40),
@@ -980,9 +1246,69 @@ function normToken(t, id) {
     owner: String(t?.owner ?? ''),
     x: clamp(Math.round(Number(t?.x)) || 0, 0, GRID - size),
     y: clamp(Math.round(Number(t?.y)) || 0, 0, GRID - size),
+    hpMax: iv(t?.hpMax, 0, 9999),
+    hp: iv(t?.hp, -999, 9999),
+    conds: [...new Set(cs)],
+    hidden: !!t?.hidden,
+    locked: !!t?.locked,
+    cid: String(t?.cid ?? '').slice(0, 12),
+    img: !!t?.img,
+    imgSrc: typeof t?.imgSrc === 'string' && t.imgSrc.startsWith('data:image/') ? t.imgSrc : undefined,
   };
 }
-const canEdit = t => iAmDM() || t.owner === myId();
+function loadLocalTokens() {
+  const raw = store.get(lk('tokens'), {});
+  return Object.fromEntries(Object.entries(raw).map(([k, v]) => [k, normToken(v, k)]));
+}
+const canEdit = t => iAmDM() || (t.owner === myId() && !t.locked);
+// DM เห็นแถบ HP ทุกตัว ผู้เล่นเห็นเฉพาะของพวกพ้อง (โทเคนที่ไม่ใช่ของ DM)
+const showHp = t => !online() || iAmDM() || t.owner === myId() || t.owner !== room.dm;
+const tokenVisible = t => iAmDM() || (!t.hidden && !fogHidden(t.x, t.y));
+const visTokens = () => Object.values(tokens).filter(tokenVisible);
+
+/* --- เส้นวาด / ข้อความ / เทมเพลต --- */
+function normDraw(d, id) {
+  const num = (v, a, b, def) => clamp(Number.isFinite(Number(v)) ? Number(v) : def, a, b);
+  const o = {
+    id,
+    t: DRAW_TYPES.includes(d?.t) ? d.t : 'pen',
+    c: safeColor(d?.c),
+    o: String(d?.o ?? ''),
+    ts: Number(d?.ts) || 0,
+    x: num(d?.x, -5, GRID + 5, 0),
+    y: num(d?.y, -5, GRID + 5, 0),
+    r: num(d?.r, 1, 600, 20),
+    a: num(d?.a, -7, 7, 0),
+    s: String(d?.s ?? '').slice(0, 80),
+    p: typeof d?.p === 'string' ? d.p.slice(0, 6000) : '',
+  };
+  o.pts = o.p ? o.p.split(';').flatMap(q => q.split(',').map(Number)).filter(Number.isFinite) : [];
+  return o;
+}
+function loadLocalDraws() {
+  const raw = store.get(lk('draw'), {});
+  return Object.fromEntries(Object.entries(raw).map(([k, v]) => [k, normDraw(v, k)]));
+}
+const drawList = () => Object.values(draws).sort((a, b) => a.ts - b.ts);
+const canDelDraw = d => iAmDM() || d.o === myId();
+
+/* --- อินิเชียทีฟ --- */
+function normInit(v) {
+  const entries = {};
+  Object.entries(v?.entries || {}).forEach(([k, e]) => {
+    if (!e || typeof e !== 'object') return;
+    entries[k] = {
+      id: k,
+      name: String(e.name || '?').slice(0, 40),
+      val: e.val == null || !Number.isFinite(Number(e.val)) ? null : Math.round(Number(e.val)),
+      tid: String(e.tid || ''),
+      owner: String(e.owner || ''),
+      ord: Number(e.ord) || 0,
+    };
+  });
+  return { entries, turn: String(v?.turn || ''), round: clamp(Math.round(Number(v?.round)) || 1, 1, 999) };
+}
+function loadLocalInit() { return normInit(store.get('init', {})); }
 
 /* =====================================================================
    รูปบนกระดาน (แผนที่ / ภาพประกอบ) — ผู้เล่นแทรกเองจากเครื่องได้
@@ -1008,7 +1334,7 @@ function normMap(m, id) {
   };
 }
 function loadLocalMaps() {
-  const raw = store.get('maps', {});
+  const raw = store.get(lk('maps'), {});
   return Object.fromEntries(Object.entries(raw).map(([k, v]) => [k, normMap(v, k)]));
 }
 const canEditMap = m => iAmDM() || m.owner === myId();
@@ -1026,7 +1352,7 @@ function rebuildLocalImgs() {
 }
 function saveLocalMaps() {
   if (online()) return;
-  if (!store.set('maps', maps)) toast('พื้นที่เก็บในเบราว์เซอร์เต็ม — ลบรูปเก่าบางรูปก่อน');
+  if (!store.set(lk('maps'), maps)) toast('พื้นที่เก็บในเบราว์เซอร์เต็ม — ลบรูปเก่าบางรูปก่อน');
 }
 
 function hitMap(px, py) {
@@ -1108,11 +1434,11 @@ async function addMapFromFile(file) {
   };
   if (online()) {
     try {
-      await fb.D.set(roomRef(`maps/${id}`), { name: m.name, x, y, w, h, owner: m.owner, created: m.created });
-      await fb.D.set(roomRef(`mapimg/${id}`), img.src);
+      await fb.D.set(sref(`maps/${id}`), { name: m.name, x, y, w, h, owner: m.owner, created: m.created });
+      await fb.D.set(sref(`mapimg/${id}`), img.src);
     } catch {
       toast('ส่งรูปเข้าห้องไม่สำเร็จ (เน็ตหลุดหรือไม่มีสิทธิ์)');
-      try { await fb.D.remove(roomRef(`maps/${id}`)); } catch { /* ignore */ }
+      try { await fb.D.remove(sref(`maps/${id}`)); } catch { /* ignore */ }
       return;
     }
   } else {
@@ -1130,8 +1456,8 @@ async function addMapFromFile(file) {
 async function mapDelete(id) {
   if (online()) {
     try {
-      await fb.D.remove(roomRef(`mapimg/${id}`)); // ลบรูปก่อน (กฎตรวจเจ้าของจากข้อมูล maps)
-      await fb.D.remove(roomRef(`maps/${id}`));
+      await fb.D.remove(sref(`mapimg/${id}`)); // ลบรูปก่อน (กฎตรวจเจ้าของจากข้อมูล maps)
+      await fb.D.remove(sref(`maps/${id}`));
     } catch { toast('ลบไม่สำเร็จ (ไม่มีสิทธิ์)'); }
   } else {
     delete maps[id];
@@ -1149,7 +1475,7 @@ async function commitMap(d) {
   if (!online()) { saveLocalMaps(); draw(); return; }
   const patch = d.kind === 'map' ? { x: m.x, y: m.y } : { w: m.w, h: m.h };
   try {
-    await fb.D.update(roomRef(`maps/${m.id}`), patch);
+    await fb.D.update(sref(`maps/${m.id}`), patch);
   } catch {
     if (d.kind === 'map') { m.x = d.ox; m.y = d.oy; } else { m.w = d.ow; m.h = d.oh; }
     draw();
@@ -1164,7 +1490,7 @@ async function patchMap(m, patch) {
   draw();
   if (!online()) { saveLocalMaps(); return; }
   try {
-    await fb.D.update(roomRef(`maps/${m.id}`), patch);
+    await fb.D.update(sref(`maps/${m.id}`), patch);
   } catch {
     Object.assign(m, old);
     draw();
@@ -1215,14 +1541,110 @@ function zoomAt(px, py, f) {
 const toWorld = (px, py) => ({ x: (px - view.x) / view.s, y: (py - view.y) / view.s });
 
 function sortedTokens(smallFirst) {
-  const vis = iAmDM() ? Object.values(tokens) : Object.values(tokens).filter(t => !fogHidden(t.x, t.y));
-  return vis.sort((a, b) => (smallFirst ? a.size - b.size : b.size - a.size));
+  return visTokens().sort((a, b) => (smallFirst ? a.size - b.size : b.size - a.size));
 }
 function hitToken(px, py) {
   const w = toWorld(px, py);
   const cx = w.x / CELL;
   const cy = w.y / CELL;
   return sortedTokens(true).find(t => cx >= t.x && cx < t.x + t.size && cy >= t.y && cy < t.y + t.size) || null;
+}
+
+/* --- วาดเส้น / ข้อความ / เทมเพลต --- */
+function tplShape(d) {
+  const L = d.r / 5;
+  const ca = Math.cos(d.a), sa = Math.sin(d.a);
+  if (d.t === 'circle') return { circle: true, x: d.x, y: d.y, r: L };
+  if (d.t === 'cube') return { poly: [[d.x - L / 2, d.y - L / 2], [d.x + L / 2, d.y - L / 2], [d.x + L / 2, d.y + L / 2], [d.x - L / 2, d.y + L / 2]] };
+  const ex = d.x + L * ca, ey = d.y + L * sa;
+  if (d.t === 'cone') { // กรวยตามกฎ: กว้างที่ปลาย = ยาว
+    const px = -sa * L / 2, py = ca * L / 2;
+    return { poly: [[d.x, d.y], [ex + px, ey + py], [ex - px, ey - py]] };
+  }
+  const px = -sa * 0.5, py = ca * 0.5; // เส้น: กว้าง 5 ft
+  return { poly: [[d.x + px, d.y + py], [ex + px, ey + py], [ex - px, ey - py], [d.x - px, d.y - py]] };
+}
+function inTemplate(d, cx, cy) {
+  const g = tplShape(d);
+  if (g.circle) return Math.hypot(cx - g.x, cy - g.y) <= g.r;
+  let inside = false;
+  const p = g.poly;
+  for (let i = 0, j = p.length - 1; i < p.length; j = i++) {
+    if ((p[i][1] > cy) !== (p[j][1] > cy) && cx < ((p[j][0] - p[i][0]) * (cy - p[i][1])) / (p[j][1] - p[i][1]) + p[i][0]) inside = !inside;
+  }
+  return inside;
+}
+function drawTemplate(d) {
+  const g = tplShape(d);
+  ctx.beginPath();
+  let lx, ly;
+  if (g.circle) {
+    ctx.arc(g.x * CELL, g.y * CELL, g.r * CELL, 0, Math.PI * 2);
+    lx = g.x; ly = g.y;
+  } else {
+    g.poly.forEach(([x, y], i) => (i ? ctx.lineTo(x * CELL, y * CELL) : ctx.moveTo(x * CELL, y * CELL)));
+    ctx.closePath();
+    lx = g.poly.reduce((a, q) => a + q[0], 0) / g.poly.length;
+    ly = g.poly.reduce((a, q) => a + q[1], 0) / g.poly.length;
+  }
+  ctx.save(); ctx.globalAlpha = 0.28; ctx.fillStyle = d.c; ctx.fill(); ctx.restore();
+  ctx.lineWidth = 2.5 / view.s; ctx.strokeStyle = d.c; ctx.stroke();
+  ctx.font = `700 ${12 / view.s}px Sarabun, sans-serif`;
+  ctx.textAlign = 'center'; ctx.textBaseline = 'middle';
+  ctx.lineWidth = 3 / view.s; ctx.strokeStyle = 'rgba(0,0,0,.8)';
+  ctx.strokeText(`${d.r} ft`, lx * CELL, ly * CELL);
+  ctx.fillStyle = '#fff'; ctx.fillText(`${d.r} ft`, lx * CELL, ly * CELL);
+}
+function drawPen(d) {
+  const p = d.pts;
+  if (p.length < 4) return;
+  ctx.beginPath();
+  ctx.moveTo(p[0] * CELL, p[1] * CELL);
+  for (let i = 2; i < p.length; i += 2) ctx.lineTo(p[i] * CELL, p[i + 1] * CELL);
+  ctx.lineWidth = 4; ctx.lineCap = 'round'; ctx.lineJoin = 'round'; ctx.strokeStyle = d.c; ctx.stroke();
+  ctx.lineCap = 'butt';
+}
+function drawText(d) {
+  ctx.font = `700 ${CELL * 0.4}px Sarabun, sans-serif`;
+  ctx.textAlign = 'center'; ctx.textBaseline = 'middle';
+  ctx.lineWidth = 5; ctx.strokeStyle = 'rgba(0,0,0,.85)'; ctx.lineJoin = 'round';
+  ctx.strokeText(d.s, d.x * CELL, d.y * CELL);
+  ctx.fillStyle = d.c; ctx.fillText(d.s, d.x * CELL, d.y * CELL);
+}
+function segDist(px, py, ax, ay, bx, by) {
+  const dx = bx - ax, dy = by - ay;
+  const l2 = dx * dx + dy * dy;
+  const t = l2 ? clamp(((px - ax) * dx + (py - ay) * dy) / l2, 0, 1) : 0;
+  return Math.hypot(px - (ax + t * dx), py - (ay + t * dy));
+}
+function hitDrawAt(cx, cy) {
+  const list = drawList().reverse();
+  for (const d of list) {
+    if (!canDelDraw(d)) continue;
+    if (d.t === 'pen') {
+      for (let i = 0; i + 3 < d.pts.length; i += 2) if (segDist(cx, cy, d.pts[i], d.pts[i + 1], d.pts[i + 2], d.pts[i + 3]) < 0.35) return d;
+      if (d.pts.length === 2 && Math.hypot(cx - d.pts[0], cy - d.pts[1]) < 0.35) return d;
+    } else if (d.t === 'text') {
+      if (Math.abs(cx - d.x) <= Math.max(0.5, d.s.length * 0.22) && Math.abs(cy - d.y) <= 0.35) return d;
+    } else if (inTemplate(d, cx, cy)) return d;
+  }
+  return null;
+}
+
+function drawRuler(r, color, who) {
+  const a = { x: r.ax ?? r.a?.x, y: r.ay ?? r.a?.y };
+  const b = { x: r.bx ?? r.b?.x, y: r.by ?? r.b?.y };
+  if (![a.x, a.y, b.x, b.y].every(Number.isFinite)) return;
+  ctx.beginPath(); ctx.moveTo(a.x * CELL, a.y * CELL); ctx.lineTo(b.x * CELL, b.y * CELL);
+  ctx.lineWidth = 3 / view.s; ctx.strokeStyle = color; ctx.setLineDash([8 / view.s, 5 / view.s]); ctx.stroke(); ctx.setLineDash([]);
+  [a, b].forEach(q => { ctx.beginPath(); ctx.arc(q.x * CELL, q.y * CELL, 5 / view.s, 0, Math.PI * 2); ctx.fillStyle = color; ctx.fill(); });
+  const ft = Math.max(Math.abs(b.x - a.x), Math.abs(b.y - a.y)) * 5;
+  const label = `${who ? who + ' · ' : ''}${ft} ft`, fs = 14 / view.s;
+  ctx.font = `700 ${fs}px Sarabun, sans-serif`;
+  const tw = ctx.measureText(label).width, lx = (a.x + b.x) / 2 * CELL, ly = (a.y + b.y) / 2 * CELL - 8 / view.s;
+  ctx.fillStyle = 'rgba(0,0,0,.85)';
+  ctx.fillRect(lx - tw / 2 - 5 / view.s, ly - fs - 4 / view.s, tw + 10 / view.s, fs + 8 / view.s);
+  ctx.fillStyle = color; ctx.textAlign = 'center'; ctx.textBaseline = 'bottom'; ctx.fillText(label, lx, ly);
 }
 
 function draw() {
@@ -1290,35 +1712,101 @@ function draw() {
     }
   }
 
+  // เส้นวาด (ชั้นล่างโทเคน)
+  const dl = drawList();
+  dl.forEach(d => { if (d.t === 'pen') drawPen(d); });
+  if (draft?.t === 'pen') drawPen(draft);
+
   // โทเคน (ใหญ่ก่อน เล็กอยู่บน)
+  const curTid = initState.entries[initState.turn]?.tid || '';
   sortedTokens(false).forEach(t => {
     const cx = (t.x + t.size / 2) * CELL;
     const cy = (t.y + t.size / 2) * CELL;
     const r = (t.size * CELL) / 2 - 3;
+    ctx.save();
+    if (t.hidden) ctx.globalAlpha = 0.45;
     ctx.beginPath();
     ctx.arc(cx, cy, r, 0, Math.PI * 2);
     ctx.fillStyle = safeColor(t.color);
     ctx.fill();
+    const im = tokImgs[t.id];
+    if (im) {
+      ctx.save();
+      ctx.beginPath(); ctx.arc(cx, cy, r, 0, Math.PI * 2); ctx.clip();
+      ctx.drawImage(im, cx - r, cy - r, 2 * r, 2 * r);
+      ctx.restore();
+    }
+    if (t.id === curTid) { // ตาของโทเคนนี้ (อินิเชียทีฟ)
+      ctx.beginPath(); ctx.arc(cx, cy, r + 5, 0, Math.PI * 2);
+      ctx.lineWidth = 4 / view.s; ctx.strokeStyle = '#7dff9b'; ctx.stroke();
+    }
+    ctx.beginPath();
+    ctx.arc(cx, cy, r, 0, Math.PI * 2);
     ctx.lineWidth = (t.id === selected ? 4 : 2) / view.s;
-    ctx.strokeStyle = t.id === selected ? '#ffd86b' : 'rgba(255,255,255,.75)';
+    ctx.strokeStyle = t.id === selected ? '#ffd86b' : (t.hidden ? '#9be' : 'rgba(255,255,255,.75)');
+    if (t.hidden) ctx.setLineDash([6 / view.s, 4 / view.s]);
     ctx.stroke();
+    ctx.setLineDash([]);
 
-    ctx.fillStyle = '#10131a';
-    ctx.font = `700 ${r * 0.95}px Sarabun, sans-serif`;
-    ctx.textAlign = 'center';
-    ctx.textBaseline = 'middle';
-    ctx.fillText(([...t.name][0] || '?').toUpperCase(), cx, cy + r * 0.05);
+    if (!im) {
+      ctx.fillStyle = '#10131a';
+      ctx.font = `700 ${r * 0.95}px Sarabun, sans-serif`;
+      ctx.textAlign = 'center';
+      ctx.textBaseline = 'middle';
+      ctx.fillText(([...t.name][0] || '?').toUpperCase(), cx, cy + r * 0.05);
+    }
+
+    if (t.hpMax && showHp(t)) {
+      const hp = t.hp ?? t.hpMax;
+      const pct = clamp(hp / t.hpMax, 0, 1);
+      if (hp <= 0) {
+        ctx.fillStyle = 'rgba(0,0,0,.55)';
+        ctx.beginPath(); ctx.arc(cx, cy, r, 0, Math.PI * 2); ctx.fill();
+        ctx.font = `${r * 1.1}px sans-serif`; ctx.textAlign = 'center'; ctx.textBaseline = 'middle';
+        ctx.fillStyle = '#fff'; ctx.fillText('💀', cx, cy);
+      }
+      const bw = t.size * CELL - 12, bx = t.x * CELL + 6, by = (t.y + t.size) * CELL - 12;
+      ctx.fillStyle = 'rgba(0,0,0,.8)'; ctx.fillRect(bx - 1.5, by - 1.5, bw + 3, 9);
+      ctx.fillStyle = pct <= 0.25 ? '#e5534b' : pct <= 0.6 ? '#e0b457' : '#5cb85c';
+      ctx.fillRect(bx, by, bw * pct, 6);
+    }
+
+    // ป้ายสถานะ
+    const cl = t.conds.slice(0, 4);
+    cl.forEach((k, i) => {
+      const bx = t.x * CELL + 10 + i * 18, by = t.y * CELL + 10;
+      ctx.beginPath(); ctx.arc(bx, by, 9, 0, Math.PI * 2); ctx.fillStyle = 'rgba(0,0,0,.72)'; ctx.fill();
+      ctx.font = '12px sans-serif'; ctx.textAlign = 'center'; ctx.textBaseline = 'middle'; ctx.fillStyle = '#fff';
+      ctx.fillText(condInfo(k)[1], bx, by + 1);
+    });
+    if (t.conds.length > 4) {
+      ctx.font = '700 11px sans-serif'; ctx.textAlign = 'left'; ctx.fillStyle = '#fff';
+      ctx.fillText(`+${t.conds.length - 4}`, t.x * CELL + 10 + 4 * 18 - 6, t.y * CELL + 11);
+    }
+    if (t.locked) {
+      ctx.font = '12px sans-serif'; ctx.textAlign = 'right'; ctx.textBaseline = 'top'; ctx.fillStyle = '#fff';
+      ctx.fillText('🔒', (t.x + t.size) * CELL - 3, t.y * CELL + 3);
+    }
+    ctx.restore();
 
     if (view.s >= 0.5) {
+      ctx.save();
+      if (t.hidden) ctx.globalAlpha = 0.6;
       ctx.font = `600 ${12 / view.s}px Sarabun, sans-serif`;
+      ctx.textAlign = 'center';
       ctx.textBaseline = 'top';
       ctx.lineWidth = 3 / view.s;
       ctx.strokeStyle = 'rgba(0,0,0,.85)';
       ctx.strokeText(t.name, cx, (t.y + t.size) * CELL + 1 / view.s);
       ctx.fillStyle = '#fff';
       ctx.fillText(t.name, cx, (t.y + t.size) * CELL + 1 / view.s);
+      ctx.restore();
     }
   });
+
+  // เทมเพลต + ข้อความ (ชั้นบนโทเคน)
+  dl.forEach(d => { if (d.t === 'text') drawText(d); else if (d.t !== 'pen') drawTemplate(d); });
+  if (draft && draft.t !== 'pen') drawTemplate(draft);
 
   // หมอก (DM เห็นเป็นโปร่ง ผู้เล่นทึบ)
   if (fog.length === GRID * GRID) {
@@ -1347,21 +1835,41 @@ function draw() {
     ctx.fillText(label, lx, ly);
   }
 
-  if (ruler) {
-    const a = ruler.a, b = ruler.b || ruler.a;
-    ctx.beginPath(); ctx.moveTo(a.x * CELL, a.y * CELL); ctx.lineTo(b.x * CELL, b.y * CELL);
-    ctx.lineWidth = 3 / view.s; ctx.strokeStyle = '#ffd86b'; ctx.setLineDash([8 / view.s, 5 / view.s]); ctx.stroke(); ctx.setLineDash([]);
-    [a, b].forEach(q => { ctx.beginPath(); ctx.arc(q.x * CELL, q.y * CELL, 5 / view.s, 0, Math.PI * 2); ctx.fillStyle = '#ffd86b'; ctx.fill(); });
-    const ft = Math.max(Math.abs(b.x - a.x), Math.abs(b.y - a.y)) * 5;
-    const label = `${ft} ft`, fs = 14 / view.s;
-    ctx.font = `700 ${fs}px Sarabun, sans-serif`;
-    const tw = ctx.measureText(label).width, lx = (a.x + b.x) / 2 * CELL, ly = (a.y + b.y) / 2 * CELL - 8 / view.s;
-    ctx.fillStyle = 'rgba(0,0,0,.85)';
-    ctx.fillRect(lx - tw / 2 - 5 / view.s, ly - fs - 4 / view.s, tw + 10 / view.s, fs + 8 / view.s);
-    ctx.fillStyle = '#ffd86b'; ctx.textAlign = 'center'; ctx.textBaseline = 'bottom'; ctx.fillText(label, lx, ly);
-  }
+  // ไม้บรรทัด (ของตัวเอง + ของคนอื่นในห้อง)
+  Object.values(remoteRulers).forEach(r => drawRuler(r, safeColor(r.c), String(r.n || '').slice(0, 20)));
+  if (ruler) drawRuler(ruler, '#ffd86b', '');
 
-  $('#zoomLbl').textContent = Math.round(view.s * 100) + '%';
+  // Ping
+  const now = performance.now();
+  pings.forEach(p => {
+    const age = (now - p.t0) / 1800;
+    if (age >= 1) return;
+    for (let k = 0; k < 3; k++) {
+      const a = clamp(age - k * 0.15, 0, 1);
+      if (a <= 0) continue;
+      ctx.beginPath(); ctx.arc(p.x * CELL, p.y * CELL, CELL * (0.2 + a * 1.8), 0, Math.PI * 2);
+      ctx.lineWidth = 4 / view.s; ctx.strokeStyle = p.c; ctx.globalAlpha = 1 - a; ctx.stroke(); ctx.globalAlpha = 1;
+    }
+    if (p.n) {
+      ctx.font = `700 ${13 / view.s}px Sarabun, sans-serif`; ctx.textAlign = 'center'; ctx.textBaseline = 'bottom';
+      ctx.lineWidth = 3 / view.s; ctx.strokeStyle = 'rgba(0,0,0,.85)'; ctx.strokeText(p.n, p.x * CELL, p.y * CELL - CELL * 0.4);
+      ctx.fillStyle = p.c; ctx.fillText(p.n, p.x * CELL, p.y * CELL - CELL * 0.4);
+    }
+  });
+
+  $('#zoomLbl').textContent = (sceneEntries().length > 1 ? sceneName(scene) + ' · ' : '') + Math.round(view.s * 100) + '%';
+}
+let pingRaf = 0;
+function addPing(p) {
+  pings.push({ x: Number(p.x), y: Number(p.y), c: safeColor(p.c), n: String(p.n || '').slice(0, 20), t0: performance.now() });
+  if (pingRaf) return;
+  const step = () => {
+    const now = performance.now();
+    pings = pings.filter(q => now - q.t0 < 1800);
+    draw();
+    pingRaf = pings.length ? requestAnimationFrame(step) : 0;
+  };
+  pingRaf = requestAnimationFrame(step);
 }
 
 function loadBg() {
@@ -1401,26 +1909,206 @@ async function fogSave() {
   fogDirty = false;
   if (online()) {
     try {
-      if (fog.length === GRID * GRID) await fb.D.set(roomRef('fog'), fog); else await fb.D.remove(roomRef('fog'));
+      if (fog.length === GRID * GRID) await fb.D.set(sref('fog'), fog); else await fb.D.remove(sref('fog'));
     } catch { toast('บันทึกหมอกไม่สำเร็จ (เฉพาะ DM)'); }
-  } else store.set('fog', fog);
+  } else store.set(lk('fog'), fog);
 }
-function fogStop() {
-  fogMode = null; fogLast = null;
-  $('#fogBar').hidden = true;
-  $('#fogBtn').classList.remove('on');
-}
+function fogStop() { if (tool === 'fog') setTool('move'); }
 function fogUI() {
   $('#fogReveal').classList.toggle('on', fogMode === 'reveal');
   $('#fogHide').classList.toggle('on', fogMode === 'hide');
   $('#fogBrush').textContent = 'พู่กัน ' + fogBrush;
 }
 
-/* --- ไม้บรรทัด (เฉพาะในเครื่องตัวเอง) --- */
-let rulerOn = false, ruler = null;
+/* --- เครื่องมือบนกระดาน --- */
+function setTool(name) {
+  if (name === 'fog' && !iAmDM()) name = 'move';
+  tool = name;
+  ruler = null; draft = null; tdrag = null; fogLast = null;
+  $$('#toolbar2 button').forEach(b => b.classList.toggle('on', b.dataset.tool === name));
+  $('#fogBar').hidden = name !== 'fog';
+  if (name === 'fog') { fogUI(); toast('ลากบนกระดานเพื่อเปิด/ซ่อนช่อง', 2500); }
+  cv.style.cursor = name === 'move' ? '' : 'crosshair';
+  buildToolOpts();
+  draw();
+}
+
+function swatchRow() {
+  return h('span', { class: 'swatches' }, ...COLORS.map(c => h('button', {
+    type: 'button', class: 'sw' + (c === drawColor ? ' on' : ''), style: `background:${c}`, 'aria-label': c,
+    onclick: () => { drawColor = c; buildToolOpts(); },
+  })));
+}
+function buildToolOpts() {
+  const box = $('#toolOpts');
+  box.innerHTML = '';
+  const show = ['pen', 'text', 'tpl', 'erase'].includes(tool);
+  box.hidden = !show;
+  if (!show) return;
+  if (tool === 'pen') {
+    box.append(h('b', { text: '✏️' }), swatchRow(), h('button', { text: 'ลบเส้นของฉัน', onclick: () => clearMyDraws(['pen']) }));
+  } else if (tool === 'text') {
+    box.append(h('b', { text: '🔤' }), swatchRow(), h('span', { class: 'muted small', text: 'แตะบนกระดานเพื่อวางข้อความ' }));
+  } else if (tool === 'tpl') {
+    const shape = h('select', { 'aria-label': 'รูปทรง', onchange: e => { tplKind = e.target.value; } },
+      ...[['circle', 'วงกลม (Sphere)'], ['cone', 'กรวย (Cone)'], ['line', 'เส้น (Line 5ft)'], ['cube', 'สี่เหลี่ยม (Cube)']]
+        .map(([v, l]) => h('option', { value: v, text: l, selected: v === tplKind })));
+    const sz = h('select', { 'aria-label': 'ขนาด', onchange: e => { tplSize = Number(e.target.value); } },
+      ...[5, 10, 15, 20, 30, 40, 60, 90, 120].map(n => h('option', { value: n, text: `${n} ft`, selected: n === tplSize })));
+    box.append(shape, sz, swatchRow(), h('button', { text: 'ลบของฉัน', onclick: () => clearMyDraws(['circle', 'cone', 'line', 'cube']) }));
+  } else if (tool === 'erase') {
+    box.append(h('b', { text: '🧽' }), h('span', { class: 'muted small', text: 'แตะหรือลากทับเส้น/ข้อความ/เทมเพลต' }),
+      h('button', { class: 'danger', text: iAmDM() ? 'ลบทั้งหมด' : 'ลบของฉันทั้งหมด', onclick: () => clearMyDraws(DRAW_TYPES) }));
+  }
+}
+
 function rulerPt(ox, oy) {
   const w = toWorld(ox, oy);
   return { x: clamp(Math.round(w.x / CELL), 0, GRID), y: clamp(Math.round(w.y / CELL), 0, GRID) };
+}
+let lastRulerSend = 0;
+let rulerTimer = 0;
+function shareRuler(final) {
+  if (!online() || !ruler) return;
+  const now = Date.now();
+  if (!final && now - lastRulerSend < 120) return;
+  lastRulerSend = now;
+  fb.D.set(roomRef(`rulers/${room.uid}`), {
+    ax: ruler.a.x, ay: ruler.a.y, bx: ruler.b.x, by: ruler.b.y, c: drawColor, n: room.name || '?', ts: now,
+  }).catch(() => {});
+  if (final) {
+    clearTimeout(rulerTimer);
+    rulerTimer = setTimeout(() => { if (online()) fb.D.remove(roomRef(`rulers/${room.uid}`)).catch(() => {}); }, 6000);
+  }
+}
+
+const r2 = v => Math.round(v * 100) / 100;
+const snap5 = v => Math.round(v * 2) / 2;
+const snapAngle = a => Math.round(a / (Math.PI / 12)) * (Math.PI / 12);
+
+function toolDown(e) {
+  const px = e.offsetX, py = e.offsetY;
+  const w = toWorld(px, py);
+  const cx = w.x / CELL, cy = w.y / CELL;
+  if (tool === 'fog') { fogLast = null; fogStroke(fogCell(px, py)); tdrag = { k: 'fog' }; return; }
+  if (tool === 'ruler') {
+    clearTimeout(rulerTimer);
+    const q = rulerPt(px, py);
+    ruler = { a: q, b: q };
+    tdrag = { k: 'ruler' };
+    draw();
+    return;
+  }
+  if (tool === 'pen') {
+    tdrag = { k: 'pen', pts: [r2(cx), r2(cy)] };
+    draft = { t: 'pen', c: drawColor, pts: tdrag.pts };
+    draw();
+    return;
+  }
+  if (tool === 'text') { tdrag = { k: 'text', x: px, y: py, cx: snap5(cx), cy: snap5(cy) }; return; }
+  if (tool === 'tpl') {
+    tdrag = { k: 'tpl', ox: snap5(cx), oy: snap5(cy), a: 0 };
+    draft = { t: tplKind, c: drawColor, r: tplSize, x: tdrag.ox, y: tdrag.oy, a: 0 };
+    draw();
+    return;
+  }
+  if (tool === 'erase') { tdrag = { k: 'erase' }; eraseAt(cx, cy); return; }
+  if (tool === 'ping') {
+    const p = { x: r2(cx), y: r2(cy), c: drawColor, n: room.name || '', from: online() ? room.uid : 'local', ts: Date.now(), k: Math.random() };
+    addPing(p);
+    if (online()) fb.D.set(roomRef('ping'), p).catch(() => {});
+    tdrag = { k: 'ping' };
+  }
+}
+
+function toolMove(e) {
+  if (!tdrag) return;
+  const px = e.offsetX, py = e.offsetY;
+  const w = toWorld(px, py);
+  const cx = w.x / CELL, cy = w.y / CELL;
+  if (tdrag.k === 'fog') { fogStroke(fogCell(px, py)); return; }
+  if (tdrag.k === 'ruler') { ruler.b = rulerPt(px, py); shareRuler(false); draw(); return; }
+  if (tdrag.k === 'pen') {
+    const p = tdrag.pts;
+    if (p.length < 800 && Math.hypot(cx - p[p.length - 2], cy - p[p.length - 1]) > 0.15) { p.push(r2(cx), r2(cy)); draw(); }
+    return;
+  }
+  if (tdrag.k === 'text') { if (Math.hypot(px - tdrag.x, py - tdrag.y) > 8) { tdrag.cx = snap5(cx); tdrag.cy = snap5(cy); } return; }
+  if (tdrag.k === 'tpl') {
+    if (tplKind === 'cone' || tplKind === 'line') {
+      const dx = cx - tdrag.ox, dy = cy - tdrag.oy;
+      if (Math.hypot(dx, dy) > 0.3) draft.a = snapAngle(Math.atan2(dy, dx));
+    } else { draft.x = snap5(cx); draft.y = snap5(cy); }
+    draw();
+    return;
+  }
+  if (tdrag.k === 'erase') eraseAt(cx, cy);
+}
+
+function toolUp() {
+  const d = tdrag;
+  tdrag = null;
+  if (!d) return;
+  if (d.k === 'fog') { fogLast = null; if (fogDirty) fogSave(); return; }
+  if (d.k === 'ruler') { shareRuler(true); draw(); return; }
+  if (d.k === 'pen' && d.pts.length >= 2) {
+    const pts = d.pts.length === 2 ? [d.pts[0], d.pts[1], d.pts[0] + 0.01, d.pts[1]] : d.pts;
+    const p = [];
+    for (let i = 0; i < pts.length; i += 2) p.push(`${pts[i]},${pts[i + 1]}`);
+    draft = null;
+    drawPut({ t: 'pen', c: drawColor, p: p.join(';') });
+    return;
+  }
+  if (d.k === 'text') {
+    const s = (prompt('ข้อความที่จะวางบนกระดาน') || '').trim().slice(0, 80);
+    if (s) drawPut({ t: 'text', c: drawColor, x: d.cx, y: d.cy, s });
+    return;
+  }
+  if (d.k === 'tpl' && draft) {
+    const t = draft;
+    draft = null;
+    drawPut({ t: t.t, c: t.c, x: t.x, y: t.y, r: t.r, a: r2(t.a) });
+    return;
+  }
+  draft = null;
+  draw();
+}
+
+function eraseAt(cx, cy) {
+  const d = hitDrawAt(cx, cy);
+  if (d) drawDelete(d.id);
+}
+
+/* --- จัดการเส้นวาด --- */
+function saveLocalDraws() { if (!online()) store.set(lk('draw'), draws); }
+async function drawPut(d) {
+  const id = uid8();
+  const data = { t: d.t, c: d.c, o: myId(), ts: Date.now() };
+  ['x', 'y', 'r', 'a', 's', 'p'].forEach(k => { if (d[k] != null) data[k] = d[k]; });
+  if (online()) {
+    try { await fb.D.set(sref(`draw/${id}`), data); } catch { toast('วาดไม่สำเร็จ (ไม่มีสิทธิ์หรือเน็ตหลุด)'); }
+  } else {
+    draws[id] = normDraw(data, id);
+    saveLocalDraws();
+    draw();
+  }
+}
+async function drawDelete(id) {
+  if (!draws[id]) return;
+  if (online()) {
+    delete draws[id]; draw();
+    try { await fb.D.remove(sref(`draw/${id}`)); } catch { toast('ลบไม่สำเร็จ (ไม่มีสิทธิ์)'); }
+  } else {
+    delete draws[id];
+    saveLocalDraws();
+    draw();
+  }
+}
+function clearMyDraws(types) {
+  const ids = drawList().filter(d => types.includes(d.t) && canDelDraw(d)).map(d => d.id);
+  if (!ids.length) { toast('ไม่มีอะไรให้ลบ'); return; }
+  if (iAmDM() && types.length === DRAW_TYPES.length && !confirm(`ลบทั้งหมด ${ids.length} รายการ?`)) return;
+  ids.forEach(id => drawDelete(id));
 }
 
 /* --- การโต้ตอบ (เมาส์ + ทัช ผ่าน Pointer Events) --- */
@@ -1428,23 +2116,14 @@ cv.addEventListener('pointerdown', e => {
   cv.setPointerCapture(e.pointerId);
   ptrs.set(e.pointerId, { x: e.offsetX, y: e.offsetY });
   if (ptrs.size === 2) {
-    drag = null; pan = null;
+    drag = null; pan = null; tdrag = null; draft = null;
     const [a, b] = [...ptrs.values()];
     pinch = { d: Math.hypot(a.x - b.x, a.y - b.y) || 1, cx: (a.x + b.x) / 2, cy: (a.y + b.y) / 2 };
     return;
   }
   if (ptrs.size > 2) return;
 
-  if (fogMode) {
-    fogLast = null; fogStroke(fogCell(e.offsetX, e.offsetY));
-    return;
-  }
-  if (rulerOn) {
-    const q = rulerPt(e.offsetX, e.offsetY);
-    ruler = { a: q, b: q };
-    draw();
-    return;
-  }
+  if (tool !== 'move') { toolDown(e); return; }
 
   // 1) จุดจับปรับขนาดของรูปที่เลือกอยู่
   if (hitHandle(e.offsetX, e.offsetY)) {
@@ -1492,8 +2171,7 @@ cv.addEventListener('pointermove', e => {
     draw();
     return;
   }
-  if (fogMode) { if (ptrs.size === 1) fogStroke(fogCell(e.offsetX, e.offsetY)); return; }
-  if (rulerOn && ruler) { ruler.b = rulerPt(e.offsetX, e.offsetY); draw(); return; }
+  if (tool !== 'move') { if (ptrs.size === 1) toolMove(e); return; }
   if (drag) {
     const w = toWorld(e.offsetX, e.offsetY);
     if (drag.kind === 'token') {
@@ -1530,7 +2208,7 @@ function endPointer(e) {
   ptrs.delete(e.pointerId);
   if (ptrs.size < 2) pinch = null;
   if (ptrs.size === 0) {
-    if (fogMode) { fogLast = null; if (fogDirty) fogSave(); return; }
+    if (tool !== 'move') { toolUp(); return; }
     if (drag) {
       const d = drag;
       drag = null;
@@ -1554,45 +2232,121 @@ cv.addEventListener('wheel', e => {
   draw();
 }, { passive: false });
 cv.addEventListener('dblclick', e => {
+  if (tool !== 'move') return;
   const t = hitToken(e.offsetX, e.offsetY);
   if (t && canEdit(t)) openTokenDialog(t);
 });
 
 /* --- จัดการโทเคน --- */
-function saveLocalTokens() { if (!online()) store.set('tokens', tokens); }
+function saveLocalTokens() { if (!online()) store.set(lk('tokens'), tokens); }
+
+function loadTokImg(id, src) {
+  if (typeof src !== 'string' || !src.startsWith('data:image/')) return;
+  const im = new Image();
+  im.onload = () => { tokImgs[id] = im; draw(); };
+  im.src = src;
+}
+// ครอปกลางเป็นสี่เหลี่ยมจัตุรัส 128px
+async function makeTokenImage(file) {
+  const bmp = await loadBitmap(file);
+  const bw = bmp.width || bmp.naturalWidth, bh = bmp.height || bmp.naturalHeight;
+  const side = Math.min(bw, bh);
+  const c = document.createElement('canvas');
+  c.width = c.height = 128;
+  c.getContext('2d').drawImage(bmp, (bw - side) / 2, (bh - side) / 2, side, side, 0, 0, 128, 128);
+  for (const q of [0.82, 0.65, 0.5]) {
+    let url = c.toDataURL('image/webp', q);
+    if (!url.startsWith('data:image/webp')) url = c.toDataURL('image/jpeg', q);
+    if (url.length <= 60000) return url;
+  }
+  throw new Error('too big');
+}
 
 async function commitMove(d) {
   const t = tokens[d.id];
   if (!online()) { saveLocalTokens(); draw(); return; }
   try {
-    await fb.D.update(roomRef(`tokens/${t.id}`), { x: t.x, y: t.y });
+    await fb.D.update(sref(`tokens/${t.id}`), { x: t.x, y: t.y });
   } catch {
     t.x = d.sx; t.y = d.sy; draw();
     toast('ย้ายไม่สำเร็จ (ไม่มีสิทธิ์หรือเน็ตหลุด)');
   }
 }
 
+function tokenData(t) {
+  const o = { name: t.name, x: t.x, y: t.y, size: t.size, color: t.color, owner: t.owner };
+  if (t.hpMax != null) { o.hpMax = t.hpMax; o.hp = t.hp ?? t.hpMax; }
+  if (t.conds.length) o.conds = t.conds.join(',');
+  if (t.hidden) o.hidden = true;
+  if (t.locked) o.locked = true;
+  if (t.cid) o.cid = t.cid;
+  if (t.img) o.img = true;
+  return o;
+}
+
 async function tokenPut(t) {
   if (online()) {
     try {
-      await fb.D.set(roomRef(`tokens/${t.id}`), { name: t.name, x: t.x, y: t.y, size: t.size, color: t.color, owner: t.owner });
+      await fb.D.set(sref(`tokens/${t.id}`), tokenData(t));
     } catch { toast('บันทึกโทเคนไม่สำเร็จ (ไม่มีสิทธิ์หรือเน็ตหลุด)'); }
   } else {
     tokens[t.id] = t;
+    if (t.imgSrc) loadTokImg(t.id, t.imgSrc); else delete tokImgs[t.id];
     saveLocalTokens();
     renderTokenList(); updateSelBar(); draw();
   }
 }
 
+// แก้บางช่องของโทเคน (HP สถานะ ซ่อน ล็อก)
+async function patchToken(t, f) {
+  const old = {};
+  Object.keys(f).forEach(k => { old[k] = t[k]; });
+  Object.assign(t, f);
+  draw();
+  if (!online()) { saveLocalTokens(); renderTokenList(); return; }
+  const p = {};
+  Object.entries(f).forEach(([k, v]) => {
+    if (k === 'conds') p.conds = v.length ? v.join(',') : null;
+    else if (k === 'hidden' || k === 'locked' || k === 'img') p[k] = v ? true : null;
+    else p[k] = v === undefined ? null : v;
+  });
+  try { await fb.D.update(sref(`tokens/${t.id}`), p); } catch {
+    Object.assign(t, old); draw();
+    toast('ไม่สำเร็จ (ไม่มีสิทธิ์หรือเน็ตหลุด)');
+  }
+}
+
 async function tokenDelete(id) {
+  const t = tokens[id];
   if (online()) {
-    try { await fb.D.remove(roomRef(`tokens/${id}`)); } catch { toast('ลบไม่สำเร็จ (ไม่มีสิทธิ์)'); }
+    try {
+      if (t?.img) await fb.D.remove(sref(`tokimg/${id}`)); // ลบรูปก่อน (กฎตรวจเจ้าของจากข้อมูล tokens)
+      await fb.D.remove(sref(`tokens/${id}`));
+    } catch { toast('ลบไม่สำเร็จ (ไม่มีสิทธิ์)'); }
   } else {
     delete tokens[id];
+    delete tokImgs[id];
     if (selected === id) selected = null;
     saveLocalTokens();
     renderTokenList(); updateSelBar(); draw();
   }
+}
+
+// ผูก HP โทเคนกับตัวละครในชีท (ทั้งสองทาง)
+function pushCharToTokens() {
+  chars.forEach(c => Object.values(tokens).forEach(t => {
+    if (t.cid !== c.id || t.owner !== myId()) return;
+    const mh = maxHp(c), hp = c.hp ?? mh;
+    if (t.hpMax !== mh || t.hp !== hp) patchToken(t, { hpMax: mh, hp });
+  }));
+}
+function tokenHpToChar(t) {
+  if (!t.cid || t.owner !== myId() || t.hp == null) return;
+  const c = chars.find(x => x.id === t.cid);
+  if (!c) return;
+  c.hp = clamp(t.hp, 0, maxHp(c) + 999);
+  changed();
+  if (c.id === activeId) $('#f-hp').value = c.hp;
 }
 
 function selectToken(id) {
@@ -1636,10 +2390,11 @@ function updateSelBar() {
   $('#selName').textContent = (m ? '🖼 ' : '') + (obj.name || '(ไม่มีชื่อ)');
   $('#selEdit').hidden = !t;
   $('#selDup').hidden = !t;
+  $('#selSt').hidden = !t || !(ok || iAmDM());
   $('#selFit').hidden = !m;
-  $('#selEdit').disabled = !ok;
+  $('#selEdit').disabled = !ok && !iAmDM();
   $('#selFit').disabled = !ok;
-  $('#selDel').disabled = !ok;
+  $('#selDel').disabled = !ok && !iAmDM();
 }
 
 function centerOn(t) {
@@ -1669,15 +2424,58 @@ function freeSpot(size, anchor) {
 function renderTokenList() {
   const box = $('#tokList');
   box.innerHTML = '';
-  const arr = Object.values(tokens).sort((a, b) => a.name.localeCompare(b.name, 'th'));
+  const arr = visTokens().sort((a, b) => a.name.localeCompare(b.name, 'th'));
   if (!arr.length) { box.append(h('div', { class: 'muted small', text: 'ยังไม่มีโทเคน — กด "+ โทเคน" หรือ "ตัวฉัน"' })); return; }
   arr.forEach(t => {
+    const hp = t.hpMax != null && showHp(t) ? `${t.hp ?? t.hpMax}/${t.hpMax}` : '';
     box.append(h('button', { class: 'tok-row' + (t.id === selected ? ' sel' : ''), onclick: () => { selectToken(t.id); centerOn(t); } },
       h('i', { class: 'dot', style: `background:${safeColor(t.color)}` }),
-      h('span', { text: t.name || '(ไม่มีชื่อ)' }),
-      h('small', { class: 'muted', text: `${t.x + 1},${t.y + 1}` })));
+      h('span', { text: `${t.hidden ? '🙈 ' : ''}${t.name || '(ไม่มีชื่อ)'}${t.conds.length ? ' ' + t.conds.map(k => condInfo(k)[1]).join('') : ''}` }),
+      h('small', { class: 'muted', text: `${hp ? 'HP ' + hp + ' · ' : ''}${t.x + 1},${t.y + 1}` })));
   });
 }
+
+/* --- HP / สถานะ --- */
+let stTok = null;
+function openStDialog(t) {
+  stTok = t.id;
+  $('#st-val').value = '';
+  renderSt();
+  $('#stDialog').showModal();
+}
+function renderSt() {
+  const t = tokens[stTok];
+  if (!t) { $('#stDialog').close(); return; }
+  $('#st-title').textContent = t.name;
+  $('#st-hp').textContent = t.hpMax != null ? `${t.hp ?? t.hpMax} / ${t.hpMax}` : 'ยังไม่ตั้ง HP';
+  const box = $('#st-conds');
+  box.innerHTML = '';
+  CONDS.forEach(([k, ico, en]) => box.append(h('button', {
+    type: 'button', class: 'cond' + (t.conds.includes(k) ? ' on' : ''), text: `${ico} ${en}`,
+    onclick: async () => {
+      const next = t.conds.includes(k) ? t.conds.filter(x => x !== k) : [...t.conds, k];
+      await patchToken(t, { conds: next });
+      renderSt();
+    },
+  })));
+}
+async function stApplyHp(delta, absolute) {
+  const t = tokens[stTok];
+  if (!t) return;
+  let hpMax = t.hpMax;
+  let hp;
+  if (absolute != null) {
+    if (hpMax == null) { hpMax = Math.max(1, absolute); }
+    hp = clamp(absolute, 0, hpMax);
+  } else {
+    if (hpMax == null) { toast('ยังไม่ตั้ง HP — ใส่ค่าแล้วกด "ตั้งเป็นค่านี้" ก่อน'); return; }
+    hp = clamp((t.hp ?? hpMax) + delta, 0, hpMax);
+  }
+  await patchToken(t, { hp, hpMax });
+  tokenHpToChar(t);
+  renderSt();
+}
+
 
 function renderParty() {
   const box = $('#partyList');
@@ -1695,6 +2493,7 @@ function renderParty() {
 /* --- กล่องแก้ไขโทเคน --- */
 let tokEditing = null;
 let tokColor = COLORS[0];
+let tokImgPending = null; // { data } หรือ { clear: true }
 
 function buildSwatches() {
   const box = $('#swatches');
@@ -1709,11 +2508,222 @@ function openTokenDialog(t) {
   $('#tok-title').textContent = t ? 'แก้ไขโทเคน' : 'โทเคนใหม่';
   $('#tok-name').value = t?.name || '';
   $('#tok-size').value = t?.size || 1;
+  $('#tok-hp').value = t?.hp ?? '';
+  $('#tok-hpmax').value = t?.hpMax ?? '';
+  $('#tok-hidden').checked = !!t?.hidden;
+  $('#tok-locked').checked = !!t?.locked;
+  $('#tok-dmopts').hidden = !iAmDM();
+  tokImgPending = null;
+  const prev = $('#tok-imgprev');
+  if (t && tokImgs[t.id]) { prev.src = tokImgs[t.id].src; prev.hidden = false; } else { prev.removeAttribute('src'); prev.hidden = true; }
   tokColor = t?.color || colorFor(myId());
   buildSwatches();
   $('#tok-del').hidden = !t;
   $('#tokDialog').showModal();
   $('#tok-name').focus();
+}
+
+
+/* =====================================================================
+   อินิเชียทีฟ (ลำดับตา) — ซิงก์ที่ rooms/<code>/init
+   ===================================================================== */
+const initSorted = () => Object.values(initState.entries).sort((a, b) => (b.val ?? -999) - (a.val ?? -999) || a.ord - b.ord);
+function saveInit() { if (!online()) store.set('init', initState); }
+
+// ผู้เล่นไม่เห็นรายการของโทเคนที่ถูกซ่อน/อยู่ในหมอก
+function initVisible(e) {
+  if (iAmDM()) return true;
+  const t = e.tid && tokens[e.tid];
+  return !t || tokenVisible(t);
+}
+
+async function initSetEntry(e) {
+  if (online()) {
+    try { await fb.D.set(roomRef(`init/entries/${e.id}`), { name: e.name, val: e.val, tid: e.tid, owner: e.owner, ord: e.ord }); }
+    catch { toast('บันทึกอินิเชียทีฟไม่สำเร็จ'); }
+  } else {
+    initState.entries[e.id] = e;
+    saveInit(); renderInit(); draw();
+  }
+}
+async function initDelEntry(id) {
+  if (online()) {
+    try { await fb.D.remove(roomRef(`init/entries/${id}`)); } catch { toast('ลบไม่สำเร็จ (ไม่มีสิทธิ์)'); }
+  } else {
+    delete initState.entries[id];
+    if (initState.turn === id) initState.turn = '';
+    saveInit(); renderInit(); draw();
+  }
+}
+async function initSetTurn(turn, round) {
+  if (online()) {
+    try { await fb.D.update(roomRef('init'), { turn, round }); } catch { toast('เฉพาะ DM'); }
+  } else {
+    const prev = initState.turn;
+    initState.turn = turn; initState.round = round;
+    saveInit(); renderInit(); draw();
+    if (turn && turn !== prev) announceTurn();
+  }
+}
+
+function announceTurn() {
+  const e = initState.entries[initState.turn];
+  if (!e) return;
+  if (initVisible(e)) toast(`ถึงตา ${e.name} (รอบ ${initState.round})`, 3000);
+  const t = e.tid && tokens[e.tid];
+  if (t && tokenVisible(t)) centerOn(t);
+}
+
+function renderInit() {
+  const box = $('#initList');
+  if (!box) return;
+  box.innerHTML = '';
+  const dm = iAmDM();
+  $$('[data-dm]').forEach(b => { b.hidden = !dm; });
+  const list = initSorted().filter(initVisible);
+  $('#initRound').hidden = !list.length;
+  $('#initRound').textContent = `รอบ ${initState.round}`;
+  if (!list.length) box.append(h('div', { class: 'muted small', text: 'ยังไม่มีรายการ — ผู้เล่นกด "🎲 ทอยของฉัน" ส่วน DM กด "+ โทเคนทั้งหมด"' }));
+  list.forEach(e => {
+    const can = dm || e.owner === myId();
+    const input = h('input', {
+      type: 'number', inputmode: 'numeric', value: e.val ?? '', placeholder: '–', disabled: !can || null, 'aria-label': 'ค่าอินิเชียทีฟ',
+      onchange: ev => initSetEntry({ ...e, val: ev.target.value === '' ? null : Math.round(Number(ev.target.value)) }),
+    });
+    box.append(h('div', { class: 'init-row' + (e.id === initState.turn ? ' now' : '') },
+      h('span', { text: e.id === initState.turn ? '▶' : '' }),
+      h('b', {
+        text: e.name,
+        onclick: () => { const t = e.tid && tokens[e.tid]; if (t && tokenVisible(t)) { selectToken(t.id); centerOn(t); } },
+      }),
+      input,
+      can ? h('button', { class: 'danger', text: '✕', 'aria-label': 'ลบ', onclick: () => initDelEntry(e.id) }) : null));
+  });
+  $('#initHint').textContent = dm
+    ? 'DM: กด "▶ ตาถัดไป" เพื่อเลื่อนตา · แก้ค่าในช่องได้ · โทเคนที่ถึงตาจะมีวงเขียว'
+    : 'ถึงตาใครระบบจะแจ้งและวงเขียวจะขึ้นที่โทเคน · แก้ได้เฉพาะค่าของตัวเอง';
+  const chip = $('#turnChip');
+  const cur = initState.entries[initState.turn];
+  chip.hidden = !(cur && initVisible(cur));
+  if (!chip.hidden) chip.textContent = `ตา: ${cur.name} · รอบ ${initState.round}`;
+}
+
+function bindInit() {
+  $('#initMine').onclick = () => {
+    const c = cur();
+    const r = emitRoll('Initiative', bonusExpr(initBonus(c)));
+    if (!r) return;
+    const mt = Object.values(tokens).find(t => t.owner === myId() && (t.cid === c.id || t.name === c.name));
+    initSetEntry({ id: `u${String(myId()).slice(0, 10)}_${c.id}`, name: c.name || 'ตัวฉัน', val: r.total, tid: mt?.id || '', owner: myId(), ord: Date.now() });
+  };
+  $('#initAddAll').onclick = async () => {
+    const have = new Set(Object.values(initState.entries).map(e => e.tid).filter(Boolean));
+    let i = 0;
+    for (const t of Object.values(tokens)) {
+      if (have.has(t.id)) continue;
+      await initSetEntry({ id: `t_${t.id}`, name: t.name, val: null, tid: t.id, owner: t.owner, ord: Date.now() + i++ });
+    }
+    if (!i) toast('โทเคนทุกตัวอยู่ในรายการแล้ว');
+  };
+  $('#initRollAll').onclick = async () => {
+    let n = 0;
+    for (const e of Object.values(initState.entries)) {
+      if (e.val != null) continue;
+      const bonus = e.owner && e.owner !== room.dm ? Number(party[e.owner]?.init) || 0 : 0;
+      const res = rollExpr(`1d20${bonus >= 0 ? '+' : '-'}${Math.abs(bonus)}`, 'normal');
+      if (res) { await initSetEntry({ ...e, val: res.total }); n++; }
+    }
+    toast(n ? `ทอยให้ ${n} รายการแล้ว` : 'ทุกรายการมีค่าแล้ว');
+  };
+  $('#initNext').onclick = () => {
+    const list = initSorted().filter(e => e.val != null);
+    if (!list.length) { toast('ยังไม่มีค่าอินิเชียทีฟ'); return; }
+    let i = list.findIndex(e => e.id === initState.turn);
+    let round = initState.round;
+    if (i < 0) { i = 0; round = 1; } else { i++; if (i >= list.length) { i = 0; round++; } }
+    initSetTurn(list[i].id, round);
+  };
+  $('#initClear').onclick = async () => {
+    if (!confirm('จบการต่อสู้และล้างรายการอินิเชียทีฟ?')) return;
+    if (online()) { try { await fb.D.remove(roomRef('init')); } catch { toast('เฉพาะ DM'); } }
+    else { initState = normInit({}); saveInit(); renderInit(); draw(); }
+  };
+}
+
+/* =====================================================================
+   ฉาก (Scene)
+   ===================================================================== */
+function sceneEntries() {
+  const src = online() ? room.scenes : scenes;
+  const rest = Object.entries(src).filter(([, v]) => v && typeof v === 'object').sort((a, b) => (a[1].ts || 0) - (b[1].ts || 0));
+  return [['main', { name: 'ฉากหลัก' }], ...rest];
+}
+function renderScenes() {
+  const list = $('#sceneList');
+  if (!list) return;
+  const ents = sceneEntries();
+  list.innerHTML = '';
+  ents.forEach(([id, v]) => list.append(h('button', {
+    class: 'tok-row' + (id === scene ? ' sel' : ''), onclick: () => sceneSelect(id),
+  }, h('span', { text: `${id === scene ? '▶ ' : ''}${v.name || 'ฉาก'}` }))));
+  const sel = $('#sceneSel');
+  sel.innerHTML = '';
+  ents.forEach(([id, v]) => sel.append(h('option', { value: id, text: `ฉาก: ${v.name || 'ฉาก'}`, selected: id === scene })));
+  sel.hidden = !(iAmDM() && ents.length > 1);
+  $('#sceneDel').disabled = scene === 'main';
+  $('#sceneRename').disabled = scene === 'main';
+}
+async function sceneSelect(id) {
+  if (!iAmDM() || id === scene) return;
+  if (online()) {
+    try { await fb.D.update(roomRef('meta'), { scene: id }); } catch { toast('เฉพาะ DM'); }
+  } else {
+    store.set('scene', id);
+    switchScene(id);
+  }
+}
+async function sceneAdd() {
+  const name = (prompt('ชื่อฉากใหม่ (เช่น ห้องบอส, ในเมือง)') || '').trim().slice(0, 30);
+  if (!name) return;
+  const id = uid8();
+  if (online()) {
+    try { await fb.D.update(roomRef('meta'), { [`scenes/${id}`]: { name, ts: Date.now() }, scene: id }); } catch { toast('เฉพาะ DM'); }
+  } else {
+    scenes[id] = { name, ts: Date.now() };
+    store.set('scenes', scenes);
+    store.set('scene', id);
+    switchScene(id);
+  }
+}
+async function sceneRename() {
+  if (scene === 'main') return;
+  const name = (prompt('ชื่อฉากใหม่', sceneName(scene)) || '').trim().slice(0, 30);
+  if (!name) return;
+  if (online()) {
+    try { await fb.D.update(roomRef('meta'), { [`scenes/${scene}/name`]: name }); } catch { toast('เฉพาะ DM'); }
+  } else {
+    scenes[scene].name = name;
+    store.set('scenes', scenes);
+    renderScenes(); draw();
+  }
+}
+async function sceneDelete() {
+  const id = scene;
+  if (id === 'main') return;
+  if (!confirm(`ลบฉาก "${sceneName(id)}" พร้อมโทเคน รูป หมอก และเส้นวาดทั้งหมดในฉากนี้?`)) return;
+  if (online()) {
+    try {
+      await fb.D.update(roomRef('meta'), { scene: 'main' });
+      await fb.D.remove(roomRef(`sdata/${id}`));
+      await fb.D.update(roomRef('meta'), { [`scenes/${id}`]: null });
+    } catch { toast('เฉพาะ DM'); }
+  } else {
+    ['tokens', 'maps', 'fog', 'draw'].forEach(k => store.del(`${k}@${id}`));
+    delete scenes[id];
+    store.set('scenes', scenes);
+    store.set('scene', 'main');
+    switchScene('main');
+  }
 }
 
 /* =====================================================================
@@ -1737,6 +2747,9 @@ function updateRoomUI() {
       : 'ออฟไลน์ — สร้างห้องหรือใส่รหัสเพื่อเล่นกับเพื่อน';
   updateSelBar();
   renderParty();
+  renderInit();
+  renderScenes();
+  buildToolOpts();
 }
 
 function openRoomDialog(msg = '') {
@@ -1815,34 +2828,29 @@ function bindBoardUI() {
   $('#tokMine').onclick = () => {
     const c = cur();
     const name = c.name || 'ตัวฉัน';
-    const mine = Object.values(tokens).find(t => t.owner === myId() && t.name === name);
+    const mine = Object.values(tokens).find(t => t.owner === myId() && (t.cid === c.id || t.name === name));
     if (mine) { selectToken(mine.id); centerOn(mine); return; }
     const pos = freeSpot(1);
-    tokenPut({ id: uid8(), name, size: 1, color: colorFor(myId()), x: pos.x, y: pos.y, owner: myId() });
+    const mh = maxHp(c);
+    tokenPut(normToken({ name, size: 1, color: colorFor(myId()), x: pos.x, y: pos.y, owner: myId(), cid: c.id, hpMax: mh, hp: c.hp ?? mh }, uid8()));
   };
   $('#zoomIn').onclick = () => { zoomAt(W / 2, H / 2, 1.25); draw(); };
   $('#zoomOut').onclick = () => { zoomAt(W / 2, H / 2, 1 / 1.25); draw(); };
   $('#zoomFit').onclick = () => { fitView(); draw(); };
-  $('#fogBtn').onclick = () => {
-    if (fogMode) { fogStop(); return; }
-    rulerOn = false; ruler = null; $('#rulerBtn').classList.remove('on');
-    fogMode = 'reveal'; $('#fogBar').hidden = false; $('#fogBtn').classList.add('on'); fogUI();
-    toast('ลากบนกระดานเพื่อเปิดช่อง');
-  };
+
+  $('#toolbar2').addEventListener('click', e => {
+    const b = e.target.closest('button[data-tool]');
+    if (!b) return;
+    setTool(tool === b.dataset.tool && tool !== 'move' ? 'move' : b.dataset.tool);
+  });
   $('#fogReveal').onclick = () => { fogMode = 'reveal'; fogUI(); };
   $('#fogHide').onclick = () => { fogMode = 'hide'; fogUI(); };
   $('#fogBrush').onclick = () => { fogBrush = fogBrush === 1 ? 3 : fogBrush === 3 ? 5 : 1; fogUI(); };
   $('#fogAll').onclick = () => { fog = '1'.repeat(GRID * GRID); fogSave(); draw(); };
   $('#fogOff').onclick = () => { fog = ''; fogSave(); draw(); };
-  $('#fogDone').onclick = () => { fogStop(); };
-  $('#rulerBtn').onclick = () => {
-    if (fogMode) fogStop();
-    rulerOn = !rulerOn; ruler = null;
-    $('#rulerBtn').classList.toggle('on', rulerOn);
-    $('#rulerBtn').setAttribute('aria-pressed', rulerOn);
-    draw();
-  };
-  $('#selDup').onclick = () => {
+  $('#fogDone').onclick = () => setTool('move');
+
+  $('#selDup').onclick = async () => {
     const t = tokens[selected];
     if (!t) return;
     const base = t.name.replace(/\s+\d+$/, '') || 'โทเคน';
@@ -1853,9 +2861,16 @@ function bindBoardUI() {
     const name = `${base} ${max + 1}`.slice(0, 40);
     const pos = freeSpot(t.size, { x: t.x + t.size, y: t.y });
     const id = uid8();
-    tokenPut({ id, name, size: t.size, color: t.color, x: pos.x, y: pos.y, owner: myId() });
+    const hasImg = t.img && tokImgs[t.id];
+    const nt = normToken({
+      name, size: t.size, color: t.color, x: pos.x, y: pos.y, owner: myId(),
+      hpMax: t.hpMax, hp: t.hpMax, hidden: t.hidden, img: !!hasImg, imgSrc: hasImg ? tokImgs[t.id].src : undefined,
+    }, id);
+    await tokenPut(nt);
+    if (hasImg && online()) { try { await fb.D.set(sref(`tokimg/${id}`), tokImgs[t.id].src); } catch { /* ignore */ } }
     if (!online()) selectToken(id);
   };
+  $('#selSt').onclick = () => { const t = tokens[selected]; if (t) openStDialog(t); };
   $('#selEdit').onclick = () => { const t = tokens[selected]; if (t) openTokenDialog(t); };
   $('#selDel').onclick = () => {
     const m = maps[selectedMap];
@@ -1883,8 +2898,8 @@ function bindBoardUI() {
     if (!confirm('ลบรูปแผนที่ทั้งหมดบนกระดาน?')) return;
     if (online()) {
       try {
-        await fb.D.remove(roomRef('mapimg'));
-        await fb.D.remove(roomRef('maps'));
+        await fb.D.remove(sref('mapimg'));
+        await fb.D.remove(sref('maps'));
       } catch { toast('ไม่มีสิทธิ์'); }
     } else {
       maps = {};
@@ -1895,25 +2910,81 @@ function bindBoardUI() {
     }
   };
 
+  // กล่องแก้ไขโทเคน
   $('#tok-cancel').onclick = () => $('#tokDialog').close();
   $('#tok-del').onclick = async () => {
     if (tokEditing) await tokenDelete(tokEditing.id);
     $('#tokDialog').close();
   };
+  $('#tok-imgpick').onclick = () => $('#tok-imgfile').click();
+  $('#tok-imgfile').onchange = async e => {
+    const f = e.target.files[0];
+    e.target.value = '';
+    if (!f || !f.type.startsWith('image/')) return;
+    try {
+      const data = await makeTokenImage(f);
+      tokImgPending = { data };
+      $('#tok-imgprev').src = data; $('#tok-imgprev').hidden = false;
+    } catch { toast('อ่านหรือย่อรูปนี้ไม่ได้'); }
+  };
+  $('#tok-imgclear').onclick = () => {
+    tokImgPending = { clear: true };
+    $('#tok-imgprev').removeAttribute('src'); $('#tok-imgprev').hidden = true;
+  };
   $('#tok-save').onclick = async () => {
     const name = $('#tok-name').value.trim().slice(0, 40) || 'โทเคน';
     const size = Number($('#tok-size').value);
-    if (tokEditing && tokens[tokEditing.id]) {
-      const t = { ...tokens[tokEditing.id], name, size, color: tokColor };
-      t.x = clamp(t.x, 0, GRID - size);
-      t.y = clamp(t.y, 0, GRID - size);
-      await tokenPut(t);
+    const iv = v => (v === '' || !Number.isFinite(Number(v)) ? null : Math.round(Number(v)));
+    let hpMax = iv($('#tok-hpmax').value);
+    let hp = iv($('#tok-hp').value);
+    if (hpMax == null && hp != null) hpMax = Math.max(hp, 0);
+    if (hpMax != null && hp == null) hp = hpMax;
+    if (hpMax != null) { hpMax = clamp(hpMax, 0, 9999); hp = clamp(hp, 0, hpMax); }
+
+    const existing = tokEditing && tokens[tokEditing.id];
+    let t;
+    if (existing) {
+      t = { ...existing };
     } else {
       const pos = freeSpot(size);
-      await tokenPut({ id: uid8(), name, size, color: tokColor, x: pos.x, y: pos.y, owner: myId() });
+      t = normToken({ x: pos.x, y: pos.y, owner: myId() }, uid8());
     }
+    Object.assign(t, { name, size, color: tokColor, hpMax, hp });
+    if (iAmDM()) { t.hidden = $('#tok-hidden').checked; t.locked = $('#tok-locked').checked; }
+    t.x = clamp(t.x, 0, GRID - size);
+    t.y = clamp(t.y, 0, GRID - size);
+
+    const hadImg = !!t.img;
+    if (tokImgPending?.data) t.img = true;
+    else if (tokImgPending?.clear) t.img = false;
+    if (!online()) {
+      if (tokImgPending?.data) t.imgSrc = tokImgPending.data;
+      else if (tokImgPending?.clear) t.imgSrc = undefined;
+    }
+    if (online() && tokImgPending?.clear && hadImg) { try { await fb.D.remove(sref(`tokimg/${t.id}`)); } catch { /* ignore */ } }
+    await tokenPut(t);
+    if (online() && tokImgPending?.data) {
+      try { await fb.D.set(sref(`tokimg/${t.id}`), tokImgPending.data); } catch { toast('ส่งรูปโทเคนไม่สำเร็จ'); }
+    }
+    if (existing && t.cid) tokenHpToChar(t);
+    tokImgPending = null;
     $('#tokDialog').close();
   };
+
+  // HP / สถานะ
+  $('#st-close').onclick = () => $('#stDialog').close();
+  $$('#stDialog [data-q]').forEach(b => { b.onclick = () => stApplyHp(Number(b.dataset.q), null); });
+  const val = () => { const v = $('#st-val').value; return v === '' ? null : Math.round(Number(v)); };
+  $('#st-dmg').onclick = () => { const v = val(); if (v == null) { toast('ใส่ตัวเลขก่อน'); return; } stApplyHp(-Math.abs(v), null); $('#st-val').value = ''; };
+  $('#st-heal').onclick = () => { const v = val(); if (v == null) { toast('ใส่ตัวเลขก่อน'); return; } stApplyHp(Math.abs(v), null); $('#st-val').value = ''; };
+  $('#st-set').onclick = () => { const v = val(); if (v == null) { toast('ใส่ตัวเลขก่อน'); return; } stApplyHp(0, Math.max(0, v)); $('#st-val').value = ''; };
+
+  // ฉาก / อินิเชียทีฟ
+  $('#sceneAdd').onclick = sceneAdd;
+  $('#sceneRename').onclick = sceneRename;
+  $('#sceneDel').onclick = sceneDelete;
+  $('#sceneSel').onchange = e => sceneSelect(e.target.value);
+  bindInit();
 
   $('#bgSet').onclick = async () => {
     const url = $('#bgUrl').value.trim();
@@ -1922,9 +2993,13 @@ function bindBoardUI() {
   };
   $('#bgClear').onclick = () => { $('#bgUrl').value = ''; setBg(''); };
   $('#tokClear').onclick = async () => {
-    if (!confirm('ล้างโทเคนทั้งหมดบนกระดาน?')) return;
-    if (online()) { try { await fb.D.remove(roomRef('tokens')); } catch { toast('ไม่มีสิทธิ์'); } }
-    else { tokens = {}; selected = null; saveLocalTokens(); renderTokenList(); updateSelBar(); draw(); }
+    if (!confirm('ล้างโทเคนทั้งหมดบนกระดาน (ฉากนี้)?')) return;
+    if (online()) {
+      try {
+        await fb.D.remove(sref('tokimg'));
+        await fb.D.remove(sref('tokens'));
+      } catch { toast('ไม่มีสิทธิ์'); }
+    } else { tokens = {}; selected = null; Object.keys(tokImgs).forEach(k => delete tokImgs[k]); saveLocalTokens(); renderTokenList(); updateSelBar(); draw(); }
   };
 }
 
@@ -1948,6 +3023,9 @@ async function boot() {
   renderSheet();
   renderTokenList();
   rebuildLocalImgs();
+  Object.values(tokens).forEach(t => { if (t.imgSrc) loadTokImg(t.id, t.imgSrc); });
+  renderInit();
+  renderScenes();
   renderMapList();
   updateRoomUI();
   loadBg();

@@ -101,8 +101,15 @@
     </div>
 
     <div class="card">
-      <div class="card-head"><h3>อาวุธ &amp; สกิลโจมตี</h3><button id="atkAdd">+ เพิ่ม</button></div>
+      <div class="card-head"><h3>อาวุธ &amp; สกิลโจมตี</h3><span><button id="atkRecalc" title="คำนวณโบนัส/ดาเมจของอาวุธที่เลือกใหม่">↻</button> <button id="atkAdd">+ เพิ่ม</button></span></div>
       <div id="attacks" class="attacks"></div>
+    </div>
+
+    <div class="card" id="featCard">
+      <div class="card-head"><h3>Feat</h3></div>
+      <div id="featList"></div>
+      <div class="row" style="display:flex;gap:6px;margin-top:8px"><select id="featSel" style="flex:1"></select><button id="featAdd">+ เพิ่ม</button></div>
+      <p class="hint">Feat จากภูมิหลังขึ้นให้อัตโนมัติ · Archery / Dueling / Defense / Tough / Alert คำนวณให้ ส่วน Feat อื่นเป็นบันทึก (อ่านรายละเอียดในหนังสือ PHB)</p>
     </div>
 
     <div class="card" id="spellCard">
@@ -153,9 +160,18 @@
       <input type="file" id="imgFile" accept="image/*" hidden>
       <button id="zoomOut" aria-label="ซูมออก">−</button>
       <button id="zoomIn" aria-label="ซูมเข้า">+</button>
-      <button id="fogBtn" hidden>🌫 หมอก</button>
-      <button id="rulerBtn" aria-pressed="false">📏 วัดระยะ</button>
       <button id="zoomFit">พอดีจอ</button>
+      <select id="sceneSel" aria-label="ฉาก" hidden></select>
+    </div>
+    <div class="toolbar tools" id="toolbar2" role="toolbar" aria-label="เครื่องมือกระดาน">
+      <button data-tool="move" class="on">✋ ย้าย</button>
+      <button data-tool="ruler">📏 วัด</button>
+      <button data-tool="pen">✏️ วาด</button>
+      <button data-tool="text">🔤 ข้อความ</button>
+      <button data-tool="tpl">⭕ เวท</button>
+      <button data-tool="erase">🧽 ลบ</button>
+      <button data-tool="ping">📍 Ping</button>
+      <button data-tool="fog" id="fogBtn" hidden>🌫 หมอก</button>
     </div>
 
     <div class="board-wrap">
@@ -163,6 +179,7 @@
       <span id="selBar" class="selbar" hidden>
         <b id="selName"></b>
         <button id="selFit" hidden>เต็มกริด</button>
+        <button id="selSt" hidden>❤ HP/สถานะ</button>
         <button id="selDup" hidden>สำเนา</button>
         <button id="selEdit">แก้ไข</button>
         <button id="selDel" class="danger">ลบ</button>
@@ -175,13 +192,28 @@
         <button id="fogOff">เลิกใช้หมอก</button>
         <button id="fogDone" class="primary">เสร็จ</button>
       </span>
+      <span id="toolOpts" class="selbar toolopts" hidden></span>
+      <div id="turnChip" class="turnchip" hidden></div>
       <div class="zoom-lbl" id="zoomLbl"></div>
     </div>
-    <p class="hint">ลากโทเคนเพื่อย้าย (ขึ้นระยะทางเป็น ft) · ลากพื้นที่ว่างเพื่อเลื่อน · ล้อเมาส์/จีบสองนิ้วเพื่อซูม · ดับเบิลคลิกโทเคนเพื่อแก้ไข · "สำเนา" ทำโทเคนซ้ำพร้อมเลขต่อท้าย (Goblin 2, 3…) · "📏 วัดระยะ" แล้วลากบนกระดาน · DM: "🌫 หมอก" แล้วลากถูเพื่อเปิด/ซ่อนช่อง<br>รูป: กด "🖼 รูป" เลือกจากเครื่อง · แตะรูปเพื่อเลือก แล้วลากเพื่อย้าย · ลากวงกลมมุมขวาล่างเพื่อปรับขนาด</p>
+    <p class="hint">โหมด ✋ ย้าย: ลากโทเคนเพื่อย้าย (ขึ้นระยะ ft) · ลากพื้นที่ว่างเพื่อเลื่อน · ล้อเมาส์/จีบสองนิ้วเพื่อซูม · ดับเบิลคลิกโทเคนเพื่อแก้ไข · "สำเนา" ทำโทเคนซ้ำ (Goblin 2, 3…)<br>เครื่องมืออื่น (กดแล้วลากบนกระดาน): 📏 วัดระยะ (คนอื่นในห้องเห็นเส้นด้วย) · ✏️ วาด · 🔤 ข้อความ · ⭕ เทมเพลตพื้นที่เวท · 🧽 ลบเส้น/ข้อความ/เทมเพลต · 📍 Ping ชี้ให้ทุกคนดู · 🌫 หมอก (DM) · กลับ ✋ ย้าย เพื่อเลื่อนกระดาน<br>รูป: กด "🖼 รูป" เลือกจากเครื่อง · แตะรูปเพื่อเลือก แล้วลากเพื่อย้าย · ลากวงกลมมุมขวาล่างเพื่อปรับขนาด</p>
 
     <details class="card" id="tokBox" open>
       <summary>โทเคนบนกระดาน</summary>
       <div id="tokList" class="tok-list"></div>
+    </details>
+
+    <details class="card" id="initBox" open>
+      <summary>อินิเชียทีฟ <span id="initRound" class="pill" hidden></span></summary>
+      <div id="initList" class="init-list"></div>
+      <div class="btn-row">
+        <button id="initMine">🎲 ทอยของฉัน</button>
+        <button id="initNext" class="primary" data-dm>▶ ตาถัดไป</button>
+        <button id="initAddAll" data-dm>+ โทเคนทั้งหมด</button>
+        <button id="initRollAll" data-dm>🎲 ทอยให้ที่ไม่มีค่า</button>
+        <button id="initClear" class="danger" data-dm>จบการต่อสู้</button>
+      </div>
+      <p class="hint" id="initHint"></p>
     </details>
 
     <details class="card" id="mapBox" open>
@@ -196,6 +228,10 @@
 
     <details class="card" id="dmBox">
       <summary>ตั้งค่ากระดาน (DM)</summary>
+      <div class="card-head sub"><h3>ฉาก (Scene)</h3></div>
+      <div id="sceneList" class="tok-list"></div>
+      <div class="btn-row"><button id="sceneAdd">+ ฉากใหม่</button><button id="sceneRename">เปลี่ยนชื่อ</button><button id="sceneDel" class="danger">ลบฉากนี้</button></div>
+      <p class="hint">ผู้เล่นจะตามไปยังฉากที่ DM เลือก แต่ละฉากมีโทเคน รูป หมอก และเส้นวาดของตัวเอง</p>
       <label>รูปแผนที่พื้นหลัง (URL รูป จะถูกยืดให้เต็มกริด 40×40)
         <input id="bgUrl" placeholder="https://..." autocomplete="off">
       </label>
@@ -279,11 +315,45 @@
       <div class="muted small">สี</div>
       <div id="swatches" class="swatches"></div>
     </div>
+    <div class="grid-2">
+      <label>HP ปัจจุบัน<input id="tok-hp" type="number" inputmode="numeric" placeholder="ไม่ใส่ = ไม่มีแถบ HP"></label>
+      <label>HP สูงสุด<input id="tok-hpmax" type="number" inputmode="numeric"></label>
+    </div>
+    <div class="tok-img">
+      <div class="muted small">รูปโทเคน (วงกลม)</div>
+      <div class="btn-row">
+        <img id="tok-imgprev" alt="" hidden>
+        <button type="button" id="tok-imgpick">เลือกรูป</button>
+        <button type="button" id="tok-imgclear">เอารูปออก</button>
+        <input type="file" id="tok-imgfile" accept="image/*" hidden>
+      </div>
+    </div>
+    <div class="grid-2" id="tok-dmopts">
+      <label class="chk"><span>ซ่อนจากผู้เล่น</span><input type="checkbox" id="tok-hidden"></label>
+      <label class="chk"><span>ล็อก (ผู้เล่นลากไม่ได้)</span><input type="checkbox" id="tok-locked"></label>
+    </div>
     <div class="btn-row">
       <button id="tok-save" class="primary">บันทึก</button>
       <button id="tok-del" class="danger">ลบ</button>
       <button id="tok-cancel">ยกเลิก</button>
     </div>
+  </div>
+</dialog>
+
+<!-- HP / สถานะ -->
+<dialog id="stDialog">
+  <div class="dlg">
+    <h3 id="st-title">HP / สถานะ</h3>
+    <div class="hp-head"><div><div class="muted small">HP</div><b id="st-hp" style="font-size:1.6rem"></b></div>
+      <label>ใส่ค่า<input id="st-val" type="number" inputmode="numeric" placeholder="เช่น 7"></label></div>
+    <div class="btn-row">
+      <button id="st-dmg" class="danger">− โดนดาเมจ</button>
+      <button id="st-heal">+ ฮีล</button>
+      <button id="st-set">ตั้งเป็นค่านี้</button>
+    </div>
+    <div class="btn-row hp-quick"><button data-q="-10">−10</button><button data-q="-5">−5</button><button data-q="-1">−1</button><button data-q="1">+1</button><button data-q="5">+5</button><button data-q="10">+10</button></div>
+    <div><div class="muted small">สถานะ (Condition)</div><div id="st-conds" class="conds"></div></div>
+    <button id="st-close" class="primary">เสร็จ</button>
   </div>
 </dialog>
 

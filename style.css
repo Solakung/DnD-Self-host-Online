@@ -244,3 +244,26 @@ label.inline select { width: auto; }
 label.chk { flex-direction: row; align-items: center; gap: 10px; padding: 8px 0; }
 label.chk input { width: 22px; height: 22px; }
 .sk.cls-ok .sk-name::after { content: ' ★'; color: var(--gold); font-size: .8rem; }
+
+/* ---------- board tools / tokens extras ---------- */
+.tools { overflow-x: auto; flex-wrap: nowrap; gap: 6px; padding-bottom: 2px; }
+.tools button { white-space: nowrap; flex: none; }
+.tools button.on { background: var(--gold); color: #1a1405; font-weight: 700; border-color: transparent; }
+.toolopts { top: auto; bottom: 26px; left: 8px; }
+.toolopts select, .toolopts input { width: auto; padding: 4px 6px; }
+.toolopts .sw { width: 26px; height: 26px; }
+.turnchip { position: absolute; left: 50%; transform: translateX(-50%); bottom: 4px; z-index: 2; pointer-events: none; white-space: nowrap; background: rgba(27,32,43,.94); border: 1px solid var(--gold); border-radius: 9px; padding: 4px 10px; font-size: .85rem; max-width: 55%; }
+.init-list { display: flex; flex-direction: column; gap: 4px; margin-bottom: 8px; }
+.init-row { display: flex; align-items: center; gap: 8px; background: var(--panel2); border: 1px solid var(--line); border-radius: 9px; padding: 4px 8px; }
+.init-row.now { border-color: var(--gold); box-shadow: 0 0 0 1px var(--gold) inset; }
+.init-row b { flex: 1; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.init-row input { width: 64px; text-align: center; padding: 4px; }
+.conds { display: flex; flex-wrap: wrap; gap: 6px; margin-top: 4px; }
+.cond { padding: 5px 9px; font-size: .85rem; }
+.cond.on { background: var(--gold); color: #1a1405; border-color: transparent; font-weight: 700; }
+.tok-img img { width: 44px; height: 44px; border-radius: 50%; object-fit: cover; border: 1px solid var(--line); }
+
+.atk .wsel { grid-column: 1 / -1; }
+.atk .winfo { grid-column: 1 / -1; margin: 0; }
+.feat { display: flex; justify-content: space-between; align-items: flex-start; gap: 8px; padding: 6px 0; border-bottom: 1px solid var(--line, #2a2a2a); }
+.feat .hint { margin: 0; }
