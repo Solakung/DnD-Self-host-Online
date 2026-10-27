@@ -1,13 +1,14 @@
 :root {
-  --bg: #12151c;
-  --panel: #1b202b;
-  --panel2: #252d3d;
-  --line: #323c50;
-  --text: #ebe8e0;
-  --muted: #98a2b5;
-  --gold: #e0b457;
-  --red: #e5534b;
-  --green: #5cb85c;
+  --bg: #120d09;
+  --panel: #1f1710;
+  --panel2: #2c2118;
+  --line: #4a3a28;
+  --text: #f0e6d2;
+  --muted: #a8977c;
+  --gold: #d9a74a;
+  --red: #c8403a;
+  --green: #6aa84f;
+  --ink: #1a1105;
   --r: 12px;
   color-scheme: dark;
 }
@@ -15,7 +16,7 @@
 [hidden] { display: none !important; }
 html, body { margin: 0; height: 100%; }
 body {
-  background: var(--bg);
+  background: radial-gradient(ellipse at 50% -10%, #2a1d12 0%, var(--bg) 60%) fixed;
   color: var(--text);
   font: 16px/1.45 'Sarabun', system-ui, sans-serif;
   display: flex;
@@ -42,7 +43,7 @@ button.on { background: var(--gold); color: #1a1405; border-color: transparent; 
 button.primary { background: var(--gold); color: #1a1405; border-color: transparent; font-weight: 700; }
 button.danger { color: #ff8a84; }
 input, select, textarea {
-  background: #11151d;
+  background: #150f0a;
   border: 1px solid var(--line);
   border-radius: 9px;
   padding: 7px 9px;
@@ -110,7 +111,7 @@ details[open] > summary { margin-bottom: 10px; }
 .hp { margin-top: 12px; }
 .hp-head { display: grid; grid-template-columns: 1fr 1fr; gap: 10px; margin-bottom: 8px; }
 .hp-head input { font-size: 1.2rem; text-align: center; }
-.hpbar { height: 10px; background: #11151d; border-radius: 6px; overflow: hidden; margin-bottom: 8px; }
+.hpbar { height: 10px; background: #150f0a; border-radius: 6px; overflow: hidden; margin-bottom: 8px; }
 .hpbar i { display: block; height: 100%; width: 100%; background: var(--green); transition: width .2s, background .2s; }
 .hpbar i.mid { background: var(--gold); }
 .hpbar i.low { background: var(--red); }
@@ -136,7 +137,7 @@ details[open] > summary { margin-bottom: 10px; }
   border: 1px solid var(--line);
   border-radius: var(--r);
   overflow: hidden;
-  background: #0d1016;
+  background: #0e0a07;
 }
 #board { position: absolute; inset: 0; width: 100%; height: 100%; touch-action: none; cursor: grab; display: block; }
 #board:active { cursor: grabbing; }
@@ -150,7 +151,7 @@ details[open] > summary { margin-bottom: 10px; }
 .tok-row span { flex: 1; }
 .dot { width: 14px; height: 14px; border-radius: 50%; display: inline-block; border: 1px solid #fff6; flex: none; }
 .party-row { display: flex; flex-wrap: wrap; gap: 6px; align-items: center; background: var(--panel2); padding: 6px 10px; border-radius: 9px; }
-.pill { background: #11151d; border: 1px solid var(--line); border-radius: 99px; padding: 0 8px; font-size: .8rem; }
+.pill { background: #150f0a; border: 1px solid var(--line); border-radius: 99px; padding: 0 8px; font-size: .8rem; }
 .swatches { display: flex; gap: 8px; flex-wrap: wrap; margin-top: 4px; }
 .sw { width: 34px; height: 34px; border-radius: 50%; padding: 0; border: 2px solid transparent; }
 .sw.on { border-color: #fff; box-shadow: 0 0 0 2px var(--gold); }
@@ -271,3 +272,34 @@ label.chk input { width: 22px; height: 22px; }
 .modes { display: inline-flex; gap: 4px; flex-wrap: wrap; }
 .modes button.on { outline: 2px solid #ffd86b; }
 .undo { display: inline-flex; gap: 4px; margin-left: auto; }
+
+/* ---------- ธีม DnD: หนังเก่า + ทองแดง + ตัวอักษรสลัก ---------- */
+h3, .brand, .tabs button, .topbar .room-btn, .result b, .card-head h3 {
+  font-family: 'Cinzel', 'Sarabun', serif;
+  letter-spacing: .04em;
+}
+.brand { font-size: 1.1rem; text-shadow: 0 0 12px rgba(217,167,74,.35); }
+h3 { color: var(--gold); font-weight: 700; text-transform: uppercase; font-size: .95rem; }
+.topbar { background: linear-gradient(#2a1d12, #1a120b); border-bottom: 2px solid #6b4f2a; box-shadow: 0 2px 10px rgba(0,0,0,.6); }
+.card {
+  background: linear-gradient(160deg, #271c13 0%, var(--panel) 100%);
+  border: 1px solid #5a4429;
+  box-shadow: inset 0 0 0 3px #1a120b, inset 0 0 0 4px #3d2e1c, 0 3px 10px rgba(0,0,0,.45);
+  padding: 14px;
+}
+.card-head { border-bottom: 1px solid #3d2e1c; padding-bottom: 8px; }
+button { background: linear-gradient(#34281c, #271d14); border-color: #5a4429; }
+button:hover { border-color: var(--gold); filter: brightness(1.12); }
+button.on, button.primary, .tabs button.active, .mode-seg button.on, .tools button.on, .cond.on {
+  background: linear-gradient(#e9bd5e, #c28e32); color: var(--ink); border-color: #8a6420;
+  box-shadow: 0 0 10px rgba(217,167,74,.3);
+}
+input, select, textarea { background: #150f0a; border-color: #4a3a28; }
+.ab, .stat { background: linear-gradient(#32261a, #261c13); border-color: #5a4429; box-shadow: inset 0 1px 0 rgba(255,255,255,.05); }
+.ab-mod { font-family: 'Cinzel', 'Sarabun', serif; text-shadow: 0 0 10px rgba(217,167,74,.3); }
+.sk { border-bottom-color: #3d2e1c; }
+.hpbar { border: 1px solid #3d2e1c; }
+::selection { background: rgba(217,167,74,.35); }
+::-webkit-scrollbar { width: 10px; height: 10px; }
+::-webkit-scrollbar-thumb { background: #5a4429; border-radius: 6px; }
+::-webkit-scrollbar-track { background: #150f0a; }

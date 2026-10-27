@@ -1717,12 +1717,12 @@ function drawRuler(r, color, who) {
 function draw() {
   if (!W) return;
   ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
-  ctx.fillStyle = '#0d1016';
+  ctx.fillStyle = '#0e0a07';
   ctx.fillRect(0, 0, W, H);
   ctx.setTransform(dpr * view.s, 0, 0, dpr * view.s, dpr * view.x, dpr * view.y);
 
   const size = GRID * CELL;
-  ctx.fillStyle = '#1b2230';
+  ctx.fillStyle = '#1c1610';
   ctx.fillRect(0, 0, size, size);
   if (bgImg && bgImg.naturalWidth) ctx.drawImage(bgImg, 0, 0, size, size);
   sortedMaps().forEach(m => {
@@ -1823,7 +1823,7 @@ function draw() {
     ctx.setLineDash([]);
 
     if (!im) {
-      ctx.fillStyle = '#10131a';
+      ctx.fillStyle = '#120d09';
       ctx.font = `700 ${r * 0.95}px Sarabun, sans-serif`;
       ctx.textAlign = 'center';
       ctx.textBaseline = 'middle';
